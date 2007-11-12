@@ -5,23 +5,30 @@ use strict;
 
 #my ($lang_code, $lang_pat, $lang_g) = ('ar', '^Arabic$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('ang', '^Old English$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('bg', '^Bulgarian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('ca', '^Catalan$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('cs', '^Czech$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('da', '^Danish$', [] );
-#my ($lang_code, $lang_pat, $lang_g) = ('de', '^German$', [] );
+my ($lang_code, $lang_pat, $lang_g) = ('de', '^German$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('el', '^Greek$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('fr', '^French$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('he', '^Hebrew$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('hu', '^Hungarian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('is', '^Icelandic$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('ko', '^Korean$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('lv', '^Latvian$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('lt', '^Lithuanian$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('mi', '^M[aā]ori$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('mn', '^Mongolian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('nl', '^Dutch$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('no', '^Norwegian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('pl', '^Polish$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('pt', '^Portuguese$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('ru', '^Russian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sk', '^Slovak(?:ian)?$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sl', '^Sloven(?:e|ian)$', [] );
-my ($lang_code, $lang_pat, $lang_g) = ('es', '^Spanish(?: \(Castill?ian\))?$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sv', '^Swedish$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('sw', '^(?:Ki[sS]|S)wahili$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('yi', '^Yiddish$', [] );
 
 my @scope;
@@ -73,6 +80,9 @@ print "<wiktionary>\n";
 
 my %gendercount;
 
+# One page reference that will be used over and over
+#my $page;					# a page is an article
+
 # Each line of dump file
 while (1) {
 
@@ -119,6 +129,7 @@ while (1) {
 
 		$pagecounter++;
 
+		# Does this mean new page references are allocated on the stack every time?
 		my $page;					# a page is an article
 
 		$page = {};
@@ -189,14 +200,20 @@ while (1) {
 
 		# Collect all the noun sections we want to parse
 		# Each language in this page
+
 		foreach my $lang (@{$p->{sections}}) {
 			if ($lang->{heading} =~ /$lang_pat/o) {
+
+				my $etymcount = 0;
+				my $nouncount = 0;
 
 				# Each l3 heading: we care about Noun and Etymology
 				foreach my $l3 (@{$lang->{sections}}) {
 
 					# TODO handle l3=Etymology # + l4=Noun
 					if ($l3->{heading} =~ /^Noun(?: \d+)?$/) {
+						$l3->{etymcount} = 1;
+						$l3->{nouncount} = ++$nouncount;
 						push @nouns, $l3;
 					}
 					elsif ($l3->{heading} =~ /Noun/) {
@@ -205,11 +222,15 @@ while (1) {
 					elsif ($l3->{heading} =~ /^Etymology \d+$/) {
 						print STDERR "** $w ** $l3->{heading}\n";
 
+						my $nouncount = 0;
+
 						# Each l4 subheading of an l3 Etymology subheading
 						foreach my $l4 (@{$l3->{sections}}) {
 
 							# TODO handle l3=Etymology # + l4=Noun
 							if ($l4->{heading} =~ /^Noun(?: \d+)?$/) {
+								$l4->{etymcount} = ++$etymcount;
+								$l4->{nouncount} = ++$nouncount;
 								push @nouns, $l4;
 							}
 							elsif ($l4->{heading} =~ /Noun/) {
@@ -223,14 +244,15 @@ while (1) {
 		}
 
 		# Parse all the noun sections we collected
+		my $t;
 		foreach my $ns (@nouns) {
 			# START process noun body
 			my ($ln, $l);
 			for ($ln = 0; $ln < scalar @{$ns->{lines}}; ++$ln) {
-				my $t = $ns->{lines}[$ln];
+				$t = $ns->{lines}[$ln];
 
 				# Ignore certain lines
-				if ($t eq '' || $t =~ /^{{wikipedia(?:Alt)?\|/ || $t =~ /^\[\[Category:[^]]*]]/) {				# }}
+				if ($t =~ /^\s*$/ || $t =~ /^{{wikipedia(?:Alt)?\|/ || $t =~ /^\[\[Category:[^]]*]]/) {				# }}
 					next;
 				# Did we get to the definitions already?
 				} elsif ($t =~ /^#/) {
@@ -242,78 +264,148 @@ while (1) {
 				}
 			}
 
-			next if ($l eq undef);
-
 			my $g = undef;	# gender (m, f, n, c, ...)
 			my $n = undef;	# number (singular, plural, ...)
 
-			++$tried_to_parse;
+			#next if ($l eq undef);
+			if ($t !~ /^#/) {
 
-			# Gender template
-			{
-			if ($l =~ /^'''.*?''',?\s+{{(m|f|n|c|mf|fm)(\.?pl\.?)?}}/) {
-				$g = $1;
-				$n = 'p' if ($2);
-			# Gender in italics
-			} elsif ($l =~ /^'''.*?''',?\s+''([mfnc])\.?''/) {
-				$g = $1;
-			# Gender followed by ambiguous plurality info
-			} elsif ($l =~ /^'''.*?'''\s+''([mfnc]), ?pl(?:ural)?''(.*)/) {
-				$g = $1;
-				$n = 'p' unless ($2);
-			# Gender and plurality
-			} elsif ($l =~ /^'''.*?'''\s+''([mfnc]) ?pl(?:ural)?''/) {
-				$g = $1;
-				$n = 'p';
-			# Two genders separated by comma
-			} elsif ($l =~ /^'''.*?'''\s+''([mfnc])(?:\/|, )([mfnc])''/) {
-				$g = $1 . $2;
-			# '''headword''' (translit) {{g}}
-			} elsif ($l =~ /^'''.*?'''(?:\s+\(.*?\))?(?:\s+{{([mfnc])}})?\s*$/) {
-				$g = $1 ? $1 : '-';
-			# '''headword''' (translit) ''g''
-			} elsif ($l =~ /^'''.*?'''(?:\s+\(.*?\))?(?:\s+''([mfnc])'')?\s*$/) {
-				$g = $1 ? $1 : '-';
-			# '''headword''' {{?????|translit}} {{g}}
-			} elsif ($l =~ /^'''.*?'''(?:\s+{{(?:IPAchar|unicode)\|.*?}})?(?:\s+{{([mfnc])}})?\s*$/) {
-				$g = $1 ? $1 : '-';
-			# '''headword''' {{?????|translit}} ''g''
-			} elsif ($l =~ /^'''.*?'''(?:\s+{{(?:IPAchar|unicode)\|.*?}})?(?:\s+''([mfnc])'')?\s*$/) {
-				$g = $1 ? $1 : '-';
-			# '''headword'''
-			} elsif ($l =~ /^'''.*?'''\s*$/) {
-				$g = '-';
-			# Careful - this one is actually for "mf" pairs (not invariants)
-			} elsif ($l =~ /^{{$lang_code-noun-mf\|f(?:emale)?=/o) {										# }}
-				$g = 'm';
-			} elsif ($l =~ /^{{$lang_code-noun-(m|f|n|c|mf|fm)\b/o) {										# }}
-				$g = $1;
-			} elsif ($l =~ /^{{$lang_code-noun2?\|(m|f|n|c|mf|fm)\b/o) {									# }}
-				$g = $1;
-			} elsif ($l =~ /^{{$lang_code-noun2?\|g(?:ender)?=(m|f|n|c|mf|fm)\b/o) {						# }}
-				$g = $1;
-			} elsif ($l =~ /^{{infl\|$lang_code\|noun(?:\|g(?:ender)?=([mfnc]))?\b/o) {						# }}
-				$g = $1 ? $1 : '-';
-			} elsif ($l =~ /^'''.*?'''\s+\((?:'')?plural:?(?:'')?:? '''.*?'''\)(?:\s+{{([mfnc])}})?/) {
-				$g = $1 ? $1 : '-';
+				# Parse the headword/inflection line for gender and number
+
+				++$tried_to_parse;
+
+				# Gender template
+				{
+				if ($l =~ /^'''.*?''',?\s+{{(m|f|n|c|mf|fm)(\.?pl\.?)?}}/) {
+					$g = $1;
+					$n = 'p' if ($2);
+				# Gender in italics
+				} elsif ($l =~ /^'''.*?''',?\s+''([mfnc])\.?''/) {
+					$g = $1;
+				# Gender followed by ambiguous plurality info
+				} elsif ($l =~ /^'''.*?'''\s+''([mfnc]), ?pl(?:ural)?''(.*)/) {
+					$g = $1;
+					$n = 'p' unless ($2);
+				# Gender and plurality
+				} elsif ($l =~ /^'''.*?'''\s+''([mfnc]) ?pl(?:ural)?''/) {
+					$g = $1;
+					$n = 'p';
+				# Two genders separated by comma
+				} elsif ($l =~ /^'''.*?'''\s+''([mfnc])(?:\/|, )([mfnc])''/) {
+					$g = $1 . $2;
+				# '''headword''' (translit) {{g}}
+				} elsif ($l =~ /^'''.*?'''(?:\s+\(.*?\))?(?:\s+{{([mfnc])}})?\s*$/) {
+					$g = $1 ? $1 : '-';
+				# '''headword''' (translit) ''g''
+				} elsif ($l =~ /^'''.*?'''(?:\s+\(.*?\))?(?:\s+''([mfnc])'')?\s*$/) {
+					$g = $1 ? $1 : '-';
+				# {{he-link|headword}} {{g}}
+				} elsif ($l =~ /^{{he-link\|.*?}}(?:\s+{{([mfnc])}})?\s*$/) {
+					$g = $1 ? $1 : '-';
+				# '''headword''' {{?????|translit}} {{g}}
+				} elsif ($l =~ /^'''.*?'''(?:\s+{{(?:IPAchar|unicode)\|.*?}})?(?:\s+{{([mfnc])}})?\s*$/) {
+					$g = $1 ? $1 : '-';
+				# '''headword''' {{?????|translit}} ''g''
+				} elsif ($l =~ /^'''.*?'''(?:\s+{{(?:IPAchar|unicode)\|.*?}})?(?:\s+''([mfnc])'')?\s*$/) {
+					$g = $1 ? $1 : '-';
+				# '''headword'''
+				} elsif ($l =~ /^'''.*?'''\s*$/) {
+					$g = '-';
+				# Careful - this one is actually for "mf" pairs (not invariants)
+				} elsif ($l =~ /^{{$lang_code-noun-mf\|f(?:emale)?=/o) {										# }}
+					$g = 'm';
+				} elsif ($l =~ /^{{$lang_code-noun-(m|f|n|c|mf|fm)\b/o) {										# }}
+					$g = $1;
+				} elsif ($l =~ /^{{$lang_code-noun2?\|(m|f|n|c|mf|fm)\b/o) {									# }}
+					$g = $1;
+				} elsif ($l =~ /^{{$lang_code-noun2?\|g(?:ender)?=(m|f|n|c|mf|fm)\b/o) {						# }}
+					$g = $1;
+				} elsif ($l =~ /^{{infl\|$lang_code\|noun(?:\|g(?:ender)?=([mfnc]))?\b/o) {						# }}
+					$g = $1 ? $1 : '-';
+				} elsif ($l =~ /^'''.*?'''\s+\((?:'')?plural:?(?:'')?:? '''.*?'''\)(?:\s+{{([mfnc])}})?/) {
+					$g = $1 ? $1 : '-';
+				}
+				}
+
+				if ($g) {
+					++$parsed_ok;
+					++$gendercount{$g};
+					#print "$w :: $g\n";
+				} else {
+					print STDERR "$w : $l\n";
+				}
+
+				#print STDERR "$w - nouns: $tried_to_parse, parsed: $parsed_ok",
+				#	", genders: ", $parsed_ok - $gendercount{'-'};
+
+				#foreach (keys %gendercount) {
+				#	print STDERR ", $_: ", $gendercount{$_};
+				#}
+				#print STDERR "\n";
 			}
+
+			# END parse headword/inflection line
+
+			while (++$ln < scalar @{$ns->{lines}}) {
+				$t = $ns->{lines}[$ln];
+				#print STDERR ".. $t\n";
+				# Ignore certain lines
+				if ($t =~ /^\s*$/) {
+					next;
+				# Anything else will be treated as the start of the definition lines
+				} else {
+					last;
+				}
 			}
-			if ($g) {
-				++$parsed_ok;
-				++$gendercount{$g};
-				print "$w :: $g\n";
-			} else {
-				print "$w : $l\n";
+
+			# START process definitions
+			while ($ln < scalar @{$ns->{lines}}) {
+				$t = $ns->{lines}[$ln++];
+				#print STDERR "** def? $t\n";
+				# Definition line?
+				if ($t =~ /^#/) {
+					if ($t =~ /^#\s*(?:[aA]n?\s*)?\[\[([^\]#\|]*)(?:#[^\]\|]*)?(?:\|[^\]]*)?]]\.?\s*$/) {
+						my $tw = $1;
+
+						# Hebrew glosses sometimes contain bogus trailing text direction marks
+						print STDERR "** gloss contains direction marks!\n" if ($tw =~ /\x{200f}/);
+						$tw =~ s/\x{200f}+$//;
+
+						# A link with a # but no page name means the same spelling as the English word
+						$tw = $tw ? $tw : $w;
+
+						my ($en, $nn) = ($ns->{etymcount}, $ns->{nouncount});
+						print "$w $en.$nn [$g] $tw\n";
+					} else {
+						#print STDERR "** unparsable def: $t\n";
+						print STDERR "U $w : $t\n";
+					}
+
+					# Eat following lines that are part of the same definition
+					while ($ln < scalar @{$ns->{lines}}) {
+						$t = $ns->{lines}[$ln++];
+						#print STDERR "** eat? $t\n";
+						# Ignore certain lines
+						if ($t =~ /^#[#*:]/) {
+							#print STDERR "** eating: $t\n";
+							next;
+						# Anything else will be treated as the start of the definition lines
+						} else {
+							#print STDERR "** done eating: $t\n";
+							--$ln;
+							last;
+						}
+					}
+				# Anything else will be treated as the end of the Noun section
+				} else {
+					if ($t !~ /^\s*$/) {
+						print STDERR "E $w : $t\n";
+					}
+					last;
+				}
 			}
-			print STDERR "$w - nouns: $tried_to_parse, parsed: $parsed_ok",
-				", genders: ", $parsed_ok - $gendercount{'-'},
-				", m: ", $gendercount{'m'},
-				", f: ", $gendercount{'f'},
-				", n: ", $gendercount{'n'},
-				", c: ", $gendercount{'c'},
-				", mf: ", $gendercount{'mf'},
-				", fm: ", $gendercount{'fm'},
-				"\n";
+			# END process definitions
+
 			# END process noun body
 		}
 	}
@@ -368,7 +460,8 @@ sub emitsection {
 sub appendsection {
 	my $section = shift;
 
-	$section->{parent} = @scope[$section->{level} - 1];
+	# This make a circular reference which prevents garbage collection!
+	#$section->{parent} = @scope[$section->{level} - 1];
 	push @{@scope[$section->{level} - 1]->{sections}}, $section;
 
 	for (my $l = $section->{level}; $l <= 7; ++$l) {
