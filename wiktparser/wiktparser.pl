@@ -3,7 +3,9 @@
 
 use strict;
 
-my $maxpages = 0;
+my @scope;
+
+my $maxpages = 100;
 my $pagecounter = 0;
 
 my %langnamestocodes;
@@ -108,8 +110,6 @@ while (1) {
 
 		$pagecounter++;
 
-		my @scope;
-
 		my $page;					# a page is an article
 
 		$page = {};
@@ -135,14 +135,7 @@ while (1) {
 		$section->{lines} = [];
 		$section->{sections} = [];
 
-		$section->{parent} = @scope[$level - 1];
-		push @{@scope[$level - 1]->{sections}}, $section;
-
-		for (my $l = $level; $l <= 7; ++$l) {
-			@scope[$l] = $section;
-		}
-
-		$prevsection = $section;
+		$prevsection = appendsection($section, $level);
 
 		# Each line of page wikitext
 		while (1) {
@@ -198,19 +191,10 @@ while (1) {
 					# Section more than 1 level deeper than its parent?
 					if ($prevsection->{level} - $level < -1) {
 						$section->{toodeep} = 1;
-						print STDERR "$page->{title}::$section->{heading} prev level $prevsection->{level}, this level $level\n";
-						#print STDERR "$page->{raw}->{sections}[0]->{heading}::$section->{heading} prev level $prevsection->{level}, this level $level\n";
 					}
 				}
 
-				$section->{parent} = @scope[$level - 1];
-				push @{@scope[$level - 1]->{sections}}, $section;
-
-				for (my $l = $level; $l <= 7; ++$l) {
-					@scope[$l] = $section;
-				}
-
-				$prevsection = $section;
+				$prevsection = appendsection($section, $level);
 			} # Heading
 			
 			else {
@@ -268,27 +252,19 @@ sub emitsection {
 	print "</s>\n";
 }
 
-#sub emitsection {
-#	my $s = shift;
 #
-#	foreach (@{$s->{lines}}) {
-#		print "<x>$_</x>\n";
-#	}
-#	foreach (@{$s->{sections}}) {
-#		my $ot = '<s';
-#		#$ot .= ' c="' . scalar @{$_->{sections}} . '"';
-#		$ot .= " l=\"$_->{level}\"";
-#		$ot .= " h=\"$_->{heading}\"";
-#		if ($_->{toodeep}) {
-#			$ot .= ' td="1"';
-#		}
-#		if ($_->{unbalanced}) {
-#			$ot .= ' u="1"';
-#		}
-#		$ot .= ">\n";
-#		print $ot;
-#		emitsection($_);
-#		print "</s>\n";
-#	}
-#}
+# @scope is a global, should be a member i guess
+#
+#
+sub appendsection {
+	my ($section, $level) = @_;
 
+	$section->{parent} = @scope[$level - 1];
+	push @{@scope[$level - 1]->{sections}}, $section;
+
+	for (my $l = $level; $l <= 7; ++$l) {
+		@scope[$l] = $section;
+	}
+
+	return $section;
+}
