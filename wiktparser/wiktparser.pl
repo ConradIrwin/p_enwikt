@@ -3,6 +3,7 @@
 
 use strict;
 
+#my ($lang_code, $lang_pat, $lang_g) = ('ar', '^Arabic$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('ang', '^Old English$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('ca', '^Catalan$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('cs', '^Czech$', [] );
@@ -14,11 +15,14 @@ use strict;
 #my ($lang_code, $lang_pat, $lang_g) = ('is', '^Icelandic$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('lv', '^Latvian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('nl', '^Dutch$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('no', '^Norwegian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('pl', '^Polish$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('ru', '^Russian$', [] );
-my ($lang_code, $lang_pat, $lang_g) = ('sk', '^Slovak(?:ian)?$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('sk', '^Slovak(?:ian)?$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sl', '^Sloven(?:e|ian)$', [] );
+my ($lang_code, $lang_pat, $lang_g) = ('es', '^Spanish(?: \(Castill?ian\))?$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sv', '^Swedish$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('yi', '^Yiddish$', [] );
 
 my @scope;
 
@@ -67,6 +71,8 @@ my $nsre = '^(' . join('|', 'webster 1913', keys %namespaces) . '):(.*)$';
 
 print "<wiktionary>\n";
 
+my %gendercount;
+
 # Each line of dump file
 while (1) {
 
@@ -108,25 +114,7 @@ while (1) {
 		exit;
 	}
 
-	# Language code template?
-	#if ($ns eq 'Template') {
-	#	if ($title =~ /^(?:lang:)?([a-z][a-z][a-z]?)$/) {
-	#		my $langcode = $1;
-
-	#		if ($xline =~ /<text xml:space="preserve">(.*?)&lt;noinclude&gt;\[\[Category:Language templates|$title]]&lt;\/noinclude&gt;<\/text>/) {
-	#			my $langname = $1;
-	#			if ($langname =~ /^\[\[(?:.*\|)?(.*?)]]$/) {
-	#				$langname = $1;
-	#			}
-
-	#			if ($langname ne '') {
-	#				push @{$langnamestocodes{$langname}}, $langcode;
-	#			}
-	#		}
-	#	}
-
 	# Article wikitext?
-	#} elsif ($ns eq '') {
 	if ($ns eq '') {
 
 		$pagecounter++;
@@ -177,31 +165,9 @@ while (1) {
 				$section->{lines} = [];
 				$section->{sections} = [];
 
-				# Language heading
-				if ($level == 2) {
-					my $langname = $headinglabel;
-					#my $langcode = $langnamestocodes{$langname};
-					my $lang;
-					if (exists $langnamestocodes{$langname}) {
-						$lang = '<' . join('|', @{$langnamestocodes{$langname}}) . '>';
-					} else {
-						$lang = $langname;
-					}
-					#push @{$page->{langs}}, $lang . ':' . $level;
-					#$entry->{lang} = {};
-					#$entry->{lang}->{label} = $langname;
-					#if (exists $langnamestocodes{$langname}) {
-					#	$entry->{lang}->{code} = $langnamestocodes{$langname}[0];
-					#}
-					#$entry->{sections} = [];
-				}
-
-				# Other headings
-				else {
-					# Section more than 1 level deeper than its parent?
-					if ($prevsection->{level} - $level < -1) {
-						$section->{toodeep} = 1;
-					}
+				# Section more than 1 level deeper than its parent?
+				if ($prevsection->{level} - $level < -1) {
+					$section->{toodeep} = 1;
 				}
 
 				$prevsection = appendsection($section);
@@ -216,72 +182,140 @@ while (1) {
 		} # while (1)
 
 		# Process raw section tree into a more structured entry
-		foreach my $p ($page->{raw}->{sections}[0]) {
-			foreach my $lang (@{$p->{sections}}) {
-				if ($lang->{heading} =~ /$lang_pat/o) {
-					foreach my $l3 (@{$lang->{sections}}) {
-						# TODO handle l3=Etymology # + l4=Noun
-						if ($l3->{heading} eq 'Noun') {
-							my $w = $p->{heading};
-							my $l = $l3->{lines}[0];
+		my $p = $page->{raw}->{sections}[0];
+		my $w = $p->{heading};
 
-							# TODO should be a loop
-							if ($l3->{lines}[1]) {
-								if ($l eq '' || $l =~ /^{{wikipediaAlt\|/ || $l =~ /^\[\[Category:[^]]*]]/) {
-									$l = $l3->{lines}[1];
-								}
+		my @nouns;
+
+		# Collect all the noun sections we want to parse
+		# Each language in this page
+		foreach my $lang (@{$p->{sections}}) {
+			if ($lang->{heading} =~ /$lang_pat/o) {
+
+				# Each l3 heading: we care about Noun and Etymology
+				foreach my $l3 (@{$lang->{sections}}) {
+
+					# TODO handle l3=Etymology # + l4=Noun
+					if ($l3->{heading} =~ /^Noun(?: \d+)?$/) {
+						push @nouns, $l3;
+					}
+					elsif ($l3->{heading} =~ /Noun/) {
+						print STDERR "** $w ** $l3->{heading}\n";
+					}
+					elsif ($l3->{heading} =~ /^Etymology \d+$/) {
+						print STDERR "** $w ** $l3->{heading}\n";
+
+						# Each l4 subheading of an l3 Etymology subheading
+						foreach my $l4 (@{$l3->{sections}}) {
+
+							# TODO handle l3=Etymology # + l4=Noun
+							if ($l4->{heading} =~ /^Noun(?: \d+)?$/) {
+								push @nouns, $l4;
 							}
-
-							my $g = undef;
-							my $n = undef;
-
-							++$tried_to_parse;
-
-#							if ($l =~ /^'''.*?''',?\s+{{(m|f|n|c|mf|fm)(\.?pl\.?)?}}/) {
-#								$g = $1;
-#								$n = 'p' if ($2);
-#							} elsif ($l =~ /^'''.*?''',?\s+''([mfnc])\.?''/) {
-#								$g = $1;
-#							} elsif ($l =~ /^'''.*?'''\s+''([mfnc]), ?pl(?:ural)?''(.*)/) {
-#								$g = $1;
-#								$n = 'p' unless ($2);
-#							} elsif ($l =~ /^'''.*?'''\s+''([mfnc]) ?pl(?:ural)?''/) {
-#								$g = $1;
-#								$n = 'p';
-#							} elsif ($l =~ /^'''.*?'''\s+''([mfnc])(?:\/|, )([mfnc])''/) {
-#								$g = $1 . $2;
-#							} elsif ($l =~ /^'''.*?'''\s*$/) {
-#								$g = '-';
-#							# Careful - this one is actually for "mf" pairs (not invariants)
-#							} elsif ($l =~ /^{{$lang_code-noun-mf\|f(?:emale)?=/o) {
-#								$g = 'm';
-#							} elsif ($l =~ /^{{$lang_code-noun-(m|f|n|c|mf|fm)\b/o) {
-#								$g = $1;
-#							} elsif ($l =~ /^{{$lang_code-noun2?\|(m|f|n|c|mf|fm)\b/o) {
-#								$g = $1;
-#							} elsif ($l =~ /^{{$lang_code-noun2?\|g(?:ender)?=(m|f|n|c|mf|fm)\b/o) {
-#								$g = $1;
-#							} elsif ($l =~ /^{{infl\|$lang_code\|noun(?:\|g(?:ender)?=([mfnc]))?\b/o) {
-#								$g = $1 ? $1 : '-';
-#							} elsif ($l =~ /^'''.*?'''\s+\((?:'')?plural:?(?:'')?:? '''.*?'''\)(?:\s+{{([mfnc])}})?/) {
-#								$g = $1 ? $1 : '-';
-#							}
-#							if ($g) {
-#								++$parsed_ok;
-#								print "$w :: $g\n";
-#							} else {
-#								print "$w : $l\n";
-#							}
-							print STDERR "$w ($parsed_ok / $tried_to_parse)\n";
+							elsif ($l4->{heading} =~ /Noun/) {
+								print STDERR "** $w ** $l4->{heading}\n";
+							}
 						}
 					}
-					last;	# Skip the following language entries
 				}
+				last;	# Skip the following language entries
 			}
 		}
 
-		# Emit page
-		#emitsection($page->{raw}->{sections}[0]);
+		# Parse all the noun sections we collected
+		foreach my $ns (@nouns) {
+			# START process noun body
+			my ($ln, $l);
+			for ($ln = 0; $ln < scalar @{$ns->{lines}}; ++$ln) {
+				my $t = $ns->{lines}[$ln];
+
+				# Ignore certain lines
+				if ($t eq '' || $t =~ /^{{wikipedia(?:Alt)?\|/ || $t =~ /^\[\[Category:[^]]*]]/) {				# }}
+					next;
+				# Did we get to the definitions already?
+				} elsif ($t =~ /^#/) {
+					last;
+				# Anything else will be treated as a headword/inflection line
+				} else {
+					$l = $t;
+					last;
+				}
+			}
+
+			next if ($l eq undef);
+
+			my $g = undef;	# gender (m, f, n, c, ...)
+			my $n = undef;	# number (singular, plural, ...)
+
+			++$tried_to_parse;
+
+			# Gender template
+			{
+			if ($l =~ /^'''.*?''',?\s+{{(m|f|n|c|mf|fm)(\.?pl\.?)?}}/) {
+				$g = $1;
+				$n = 'p' if ($2);
+			# Gender in italics
+			} elsif ($l =~ /^'''.*?''',?\s+''([mfnc])\.?''/) {
+				$g = $1;
+			# Gender followed by ambiguous plurality info
+			} elsif ($l =~ /^'''.*?'''\s+''([mfnc]), ?pl(?:ural)?''(.*)/) {
+				$g = $1;
+				$n = 'p' unless ($2);
+			# Gender and plurality
+			} elsif ($l =~ /^'''.*?'''\s+''([mfnc]) ?pl(?:ural)?''/) {
+				$g = $1;
+				$n = 'p';
+			# Two genders separated by comma
+			} elsif ($l =~ /^'''.*?'''\s+''([mfnc])(?:\/|, )([mfnc])''/) {
+				$g = $1 . $2;
+			# '''headword''' (translit) {{g}}
+			} elsif ($l =~ /^'''.*?'''(?:\s+\(.*?\))?(?:\s+{{([mfnc])}})?\s*$/) {
+				$g = $1 ? $1 : '-';
+			# '''headword''' (translit) ''g''
+			} elsif ($l =~ /^'''.*?'''(?:\s+\(.*?\))?(?:\s+''([mfnc])'')?\s*$/) {
+				$g = $1 ? $1 : '-';
+			# '''headword''' {{?????|translit}} {{g}}
+			} elsif ($l =~ /^'''.*?'''(?:\s+{{(?:IPAchar|unicode)\|.*?}})?(?:\s+{{([mfnc])}})?\s*$/) {
+				$g = $1 ? $1 : '-';
+			# '''headword''' {{?????|translit}} ''g''
+			} elsif ($l =~ /^'''.*?'''(?:\s+{{(?:IPAchar|unicode)\|.*?}})?(?:\s+''([mfnc])'')?\s*$/) {
+				$g = $1 ? $1 : '-';
+			# '''headword'''
+			} elsif ($l =~ /^'''.*?'''\s*$/) {
+				$g = '-';
+			# Careful - this one is actually for "mf" pairs (not invariants)
+			} elsif ($l =~ /^{{$lang_code-noun-mf\|f(?:emale)?=/o) {										# }}
+				$g = 'm';
+			} elsif ($l =~ /^{{$lang_code-noun-(m|f|n|c|mf|fm)\b/o) {										# }}
+				$g = $1;
+			} elsif ($l =~ /^{{$lang_code-noun2?\|(m|f|n|c|mf|fm)\b/o) {									# }}
+				$g = $1;
+			} elsif ($l =~ /^{{$lang_code-noun2?\|g(?:ender)?=(m|f|n|c|mf|fm)\b/o) {						# }}
+				$g = $1;
+			} elsif ($l =~ /^{{infl\|$lang_code\|noun(?:\|g(?:ender)?=([mfnc]))?\b/o) {						# }}
+				$g = $1 ? $1 : '-';
+			} elsif ($l =~ /^'''.*?'''\s+\((?:'')?plural:?(?:'')?:? '''.*?'''\)(?:\s+{{([mfnc])}})?/) {
+				$g = $1 ? $1 : '-';
+			}
+			}
+			if ($g) {
+				++$parsed_ok;
+				++$gendercount{$g};
+				print "$w :: $g\n";
+			} else {
+				print "$w : $l\n";
+			}
+			print STDERR "$w - nouns: $tried_to_parse, parsed: $parsed_ok",
+				", genders: ", $parsed_ok - $gendercount{'-'},
+				", m: ", $gendercount{'m'},
+				", f: ", $gendercount{'f'},
+				", n: ", $gendercount{'n'},
+				", c: ", $gendercount{'c'},
+				", mf: ", $gendercount{'mf'},
+				", fm: ", $gendercount{'fm'},
+				"\n";
+			# END process noun body
+		}
 	}
 
 	# Skip remainder of page
@@ -311,10 +345,10 @@ sub emitsection {
 	$ot .= " l=\"$s->{level}\"";
 	$ot .= " h=\"$s->{heading}\"";
 	if ($s->{toodeep}) {
-		$ot .= ' td="1"';
+		$ot .= ' td';
 	}
 	if ($s->{unbalanced}) {
-		$ot .= ' u="1"';
+		$ot .= ' ub';
 	}
 	$ot .= ">\n";
 	print $ot;
@@ -330,7 +364,7 @@ sub emitsection {
 #
 # @scope is a global, should be a member i guess
 #
-#
+
 sub appendsection {
 	my $section = shift;
 
