@@ -65,8 +65,6 @@ sub title_handler {
 }
 
 sub text_handler {
-	#print "** $namespace $title\n";
 	$wiktparser->parse( $namespace, \$pagecounter, $title, \$xline, $lang->{pattern}, \$tried_to_parse, \$parsed_ok, \%gendercount );
-	#print "** p $pagecounter t $tried_to_parse ok $parsed_ok\n";
 }
 
