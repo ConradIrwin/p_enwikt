@@ -49,7 +49,21 @@ my $headword_matchers = [
 sub new {
 	my $class = shift;
 	my $self = bless {}, $class;
+
+	$self->{article_handler} = \&default_article_handler;
 	return $self;
+}
+
+sub set_article_handler {
+	my ($self, $handler) = @_;
+
+	$self->{article_handler} = $handler;
+}
+
+sub set_template_handler {
+	my ($self, $handler) = @_;
+
+	$self->{template_handler} = $handler;
 }
 
 #
@@ -71,189 +85,209 @@ sub parse {
 	my ($ns, $pagecounter, $title, $xline, $lang_pat, $tried_to_parse, $parsed_ok, $gendercount) = @_;
 
 	if ($ns eq '') {
+		if ($self->{article_handler}) {
+			if ($self->{article_handler} == \&default_article_handler) {
+				$self->default_article_handler($pagecounter, $title, $xline,
+					$lang_pat, $tried_to_parse, $parsed_ok, $gendercount);
+			} else {
+				&{$self->{article_handler}}($pagecounter, $title, $xline,
+					$lang_pat, $tried_to_parse, $parsed_ok, $gendercount);
+			}
+		}
+	# TODO localize by using namespace numbers
+	} elsif ($ns eq 'Template') {
+		if ($self->{template_handler}) {
+			&{$self->{template_handler}}($pagecounter, $title, $xline,
+				$lang_pat, $tried_to_parse, $parsed_ok, $gendercount);
+		}
+	}
+}
 
-		$$pagecounter++;
+sub default_article_handler {
+	my $self = shift;
+	my ($pagecounter, $title, $xline, $lang_pat, $tried_to_parse, $parsed_ok, $gendercount) = @_;
 
-		# Does this mean new page references are allocated on the stack every time?
-		my $page;					# a page is an article
+	$$pagecounter++;
 
-		$page = {};
-		$page->{raw} = {};			# level 1 heading, root for tree of headings
-		$page->{cooked} = {};
+	my $page;					# a page is an article
 
-		@scope[0] = $page->{raw};
+	$page = {};
+	$page->{raw} = {};			# level 1 heading, root for tree of headings
+	$page->{cooked} = {};
 
-		my $tline;					# line of wikitext to be parsed
+	@scope[0] = $page->{raw};
 
-		my $prevsection;
-		my $section;				# each heading starts a new section
+	my $tline;					# line of wikitext to be parsed
 
-		my $entry;					# each language heading starts a new entry
+	my $prevsection;
+	my $section;				# each heading starts a new section
 
-		$page->{title} = $title;
+	my $entry;					# each language heading starts a new entry
 
-		$section = {};
-		$section->{level} = 1;
-		$section->{heading} = $title;
-		$section->{lines} = [];
-		$section->{sections} = [];
+	$page->{title} = $title;
 
-		$prevsection = $self->appendsection($section);
+	$section = {};
+	$section->{level} = 1;
+	$section->{heading} = $title;
+	$section->{lines} = [];
+	$section->{sections} = [];
 
-		# Each line of page wikitext
-		while (1) {
-			$$xline =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
-			my ($tline, $post) = ($1, $2);
+	$prevsection = $self->appendsection($section);
 
-			last if ($post ne '');
+	# Each line of page wikitext
+	while (1) {
+		$$xline =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
+		my ($tline, $post) = ($1, $2);
 
-			# Heading
-			if ($tline =~ /^(==+)\s*([^=]+?)\s*(==+)\s*$/) {
-				$section = {};
-				$section->{unbalanced} = (length($1) != length($3));
-				my $level = length($1) < length($3) ? length($1) : length($3);
-				$section->{level} = $level;
-				my $headinglabel = $2;
-				if ($headinglabel =~ /^\[\[\s*(?:.*\|)?(.*?)\s*\]\]$/) {
-					$headinglabel = $1;
-				}
-				$section->{heading} = $headinglabel;
-				$section->{lines} = [];
-				$section->{sections} = [];
+		# TODO shouldn't this test be at the bottom of the loop?
+		last if ($post ne '');
 
-				# Section more than 1 level deeper than its parent?
-				if ($prevsection->{level} - $level < -1) {
-					$section->{toodeep} = 1;
-				}
+		# Heading
+		if ($tline =~ /^(==+)\s*([^=]+?)\s*(==+)\s*$/) {
+			$section = {};
+			$section->{unbalanced} = (length($1) != length($3));
+			my $level = length($1) < length($3) ? length($1) : length($3);
+			$section->{level} = $level;
+			my $headinglabel = $2;
+			if ($headinglabel =~ /^\[\[\s*(?:.*\|)?(.*?)\s*\]\]$/) {
+				$headinglabel = $1;
+			}
+			$section->{heading} = $headinglabel;
+			$section->{lines} = [];
+			$section->{sections} = [];
 
-				$prevsection = $self->appendsection($section);
-			} # Heading
-			
-			# Not heading, just plain lines
-			else {
-				push @{$section->{lines}}, $tline;
+			# Section more than 1 level deeper than its parent?
+			if ($prevsection->{level} - $level < -1) {
+				$section->{toodeep} = 1;
 			}
 
-			last unless ($$xline = <STDIN>);
-		} # while (1)
+			$prevsection = $self->appendsection($section);
+		} # Heading
+		
+		# Not heading, just plain lines
+		else {
+			push @{$section->{lines}}, $tline;
+		}
 
-		# Process raw section tree into a more structured entry
-		my $p = $page->{raw}->{sections}[0];
-		my $w = $p->{heading};
+		last unless ($$xline = <STDIN>);
+	} # while (1)
 
-		my @nouns;
+	# Process raw section tree into a more structured entry
+	my $p = $page->{raw}->{sections}[0];
+	my $w = $p->{heading};
 
-		# Collect all the noun sections we want to parse
+	my @nouns;
 
-		# Each language in this page
-		foreach my $lang (@{$p->{sections}}) {
-			if ($lang->{heading} =~ /$lang_pat/o) {
+	# Collect all the noun sections we want to parse
 
-				my $etymcount = 0;
-				my $nouncount = 0;
+	# Each language in this page
+	foreach my $lang (@{$p->{sections}}) {
+		if ($lang->{heading} =~ /$lang_pat/o) {
 
-				# Each l3 heading: we care about Noun and Etymology
-				foreach my $l3 (@{$lang->{sections}}) {
+			my $etymcount = 0;
+			my $nouncount = 0;
 
-					# Noun, possibly numbered
-					if ($l3->{heading} =~ /^Noun(?:\s+\d+)?$/) {
-						$l3->{etymcount} = 1;
-						$l3->{nouncount} = ++$nouncount;
-						push @nouns, $l3;
-					}
-					# Unsupported variations on Noun
-					elsif ($l3->{heading} =~ /\b[Nn]oun/) {
-						print STDERR "** $w ** $l3->{heading}\n";
-					}
+			# Each l3 heading: we care about Noun and Etymology
+			foreach my $l3 (@{$lang->{sections}}) {
 
-					# Etymology, supposed to be numbered
-					elsif ($l3->{heading} =~ /^Etymology(?:\s+\d+)?$/) {
+				# Noun, possibly numbered
+				if ($l3->{heading} =~ /^Noun(?:\s+\d+)?$/) {
+					$l3->{etymcount} = 1;
+					$l3->{nouncount} = ++$nouncount;
+					push @nouns, $l3;
+				}
+				# Unsupported variations on Noun
+				elsif ($l3->{heading} =~ /\b[Nn]oun/) {
+					print STDERR "** $w ** $l3->{heading}\n";
+				}
 
-						my $nouncount = 0;
+				# Etymology, supposed to be numbered
+				elsif ($l3->{heading} =~ /^Etymology(?:\s+\d+)?$/) {
 
-						# Each l4 subheading of an l3 Etymology section
-						foreach my $l4 (@{$l3->{sections}}) {
+					my $nouncount = 0;
 
-							# Noun, possibly numbered
-							if ($l4->{heading} =~ /^Noun(?: \d+)?$/) {
-								$l4->{etymcount} = ++$etymcount;
-								$l4->{nouncount} = ++$nouncount;
-								push @nouns, $l4;
-							}
-							# Unsupported variations on Noun
-							elsif ($l3->{heading} =~ /\b[Nn]oun/) {
-								print STDERR "** $w ** $l4->{heading}\n";
-							}
+					# Each l4 subheading of an l3 Etymology section
+					foreach my $l4 (@{$l3->{sections}}) {
+
+						# Noun, possibly numbered
+						if ($l4->{heading} =~ /^Noun(?: \d+)?$/) {
+							$l4->{etymcount} = ++$etymcount;
+							$l4->{nouncount} = ++$nouncount;
+							push @nouns, $l4;
+						}
+						# Unsupported variations on Noun
+						elsif ($l3->{heading} =~ /\b[Nn]oun/) {
+							print STDERR "** $w ** $l4->{heading}\n";
 						}
 					}
 				}
-				last;	# Skip the following language entries
+			}
+			last;	# Skip the following language entries
+		}
+	}
+
+	# Parse all the noun sections we collected
+	my $t;
+	foreach my $ns (@nouns) {
+		# START process noun body
+		my ($ln, $l);
+		for ($ln = 0; $ln < scalar @{$ns->{lines}}; ++$ln) {
+			$t = $ns->{lines}[$ln];
+
+			# Ignore certain lines
+			if ($t =~ /^\s*$/
+				|| $t =~ /^{{wikipedia(?:Alt)?\|/						# }}
+				|| $t =~ /^\[\[Category:[^]]*]]/) {
+				next;
+			# Did we get to the definitions already?
+			} elsif ($t =~ /^#/) {
+				last;
+			# Anything else will be treated as a headword/inflection line
+			} else {
+				$l = $t;
+				last;
 			}
 		}
 
-		# Parse all the noun sections we collected
-		my $t;
-		foreach my $ns (@nouns) {
-			# START process noun body
-			my ($ln, $l);
-			for ($ln = 0; $ln < scalar @{$ns->{lines}}; ++$ln) {
-				$t = $ns->{lines}[$ln];
+		my $g = undef;	# gender (m, f, n, c, ...)
+		my $n = undef;	# number (singular, plural, ...)
 
-				# Ignore certain lines
-				if ($t =~ /^\s*$/
-					|| $t =~ /^{{wikipedia(?:Alt)?\|/						# }}
-					|| $t =~ /^\[\[Category:[^]]*]]/) {
-					next;
-				# Did we get to the definitions already?
-				} elsif ($t =~ /^#/) {
-					last;
-				# Anything else will be treated as a headword/inflection line
-				} else {
-					$l = $t;
-					last;
-				}
+		#next if ($l eq undef);
+		if ($t !~ /^#/) {
+
+			# Parse the headword/inflection line for gender and number
+
+			++$$tried_to_parse;
+
+			if ((my $hw = $self->parse_headword($w, $l))) {
+				$g = $hw->{g};
+				$n = $hw->{n};
+				++$$parsed_ok;
 			}
 
-			my $g = undef;	# gender (m, f, n, c, ...)
-			my $n = undef;	# number (singular, plural, ...)
-
-			#next if ($l eq undef);
-			if ($t !~ /^#/) {
-
-				# Parse the headword/inflection line for gender and number
-
-				++$$tried_to_parse;
-
-				if ((my $hw = $self->parse_headword($w, $l))) {
-					$g = $hw->{g};
-					$n = $hw->{n};
-					++$$parsed_ok;
-				}
-
-				if ($g) {
-					++$gendercount->{$g};
-				}
+			if ($g) {
+				++$gendercount->{$g};
 			}
-			# END parse headword/inflection line
-
-			# Transition from headword/inflection section to definitions section
-
-			while (++$ln < scalar @{$ns->{lines}}) {
-				$t = $ns->{lines}[$ln];
-				# Ignore certain lines
-				if ($t =~ /^\s*$/) {
-					next;
-				# Anything else will be treated as the start of the definition lines
-				} else {
-					#print STDERR "EH $w : $t\n";
-					last;
-				}
-			}
-
-			$self->parse_definitions(\$ln, $ns, \$t, $w, $g);
-
-			# END process noun body
 		}
+		# END parse headword/inflection line
+
+		# Transition from headword/inflection section to definitions section
+
+		while (++$ln < scalar @{$ns->{lines}}) {
+			$t = $ns->{lines}[$ln];
+			# Ignore certain lines
+			if ($t =~ /^\s*$/) {
+				next;
+			# Anything else will be treated as the start of the definition lines
+			} else {
+				#print STDERR "EH $w : $t\n";
+				last;
+			}
+		}
+
+		$self->parse_definitions(\$ln, $ns, \$t, $w, $g);
+
+		# END process noun body
 	}
 }
 
