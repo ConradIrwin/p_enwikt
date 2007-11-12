@@ -42,11 +42,19 @@ my $headword_matchers = [
 	[ "^'''.*?'''\\s+\\((?:'')?plural:?(?:'')?:? '''.*?'''\\)(?:\\s+{{([mfnc])}})?",	'g1?1:-' ],
 ];
 
+#
+# Constructor
+#
+
 sub new {
 	my $class = shift;
 	my $self = bless {}, $class;
 	return $self;
 }
+
+#
+# This can be called only once
+#
 
 sub set_lang_code {
 	my ($self, $code) = @_;
@@ -216,27 +224,15 @@ sub parse {
 
 				++$$tried_to_parse;
 
-				# Gender template
-				if ((my $hw = $self->parse_headword($l))) {
+				if ((my $hw = $self->parse_headword($w, $l))) {
 					$g = $hw->{g};
-					$n = $hw->{n}
+					$n = $hw->{n};
+					++$$parsed_ok;
 				}
 
 				if ($g) {
-					++$$parsed_ok;
 					++$gendercount->{$g};
-					#print "$w :: $g\n";
-				} else {
-					print STDERR "$w : $l\n";
 				}
-
-				#print STDERR "$w - nouns: $tried_to_parse, parsed: $parsed_ok",
-				#	", genders: ", $parsed_ok - $gendercount{'-'};
-
-				#foreach (keys %gendercount) {
-				#	print STDERR ", $_: ", $gendercount{$_};
-				#}
-				#print STDERR "\n";
 			}
 			# END parse headword/inflection line
 
@@ -244,64 +240,17 @@ sub parse {
 
 			while (++$ln < scalar @{$ns->{lines}}) {
 				$t = $ns->{lines}[$ln];
-				#print STDERR ".. $t\n";
 				# Ignore certain lines
 				if ($t =~ /^\s*$/) {
 					next;
 				# Anything else will be treated as the start of the definition lines
 				} else {
+					#print STDERR "EH $w : $t\n";
 					last;
 				}
 			}
 
-			# START process definitions
-			while ($ln < scalar @{$ns->{lines}}) {
-				$t = $ns->{lines}[$ln++];
-				#print STDERR "** def? $t\n";
-				# Definition line?
-				if ($t =~ /^#/) {
-					if ($t =~ /^#\s*(?:[aA]n?\s*)?\[\[([^\]#\|]*)(?:#[^\]\|]*)?(?:\|[^\]]*)?]]\.?\s*$/) {
-						my $tw = $1;
-
-						# Hebrew glosses sometimes contain bogus trailing text direction marks
-						# TODO this test does not work!
-						print STDERR "** gloss contains direction marks!\n" if ($tw =~ /\x{200f}/);
-						$tw =~ s/\x{200f}+$//;
-
-						# A link with a # but no page name means the same spelling as the English word
-						$tw = $tw ? $tw : $w;
-
-						my ($en, $nn) = ($ns->{etymcount}, $ns->{nouncount});
-						print "$w $en.$nn [$g] $tw\n";
-					} else {
-						#print STDERR "** unparsable def: $t\n";
-						print STDERR "U $w : $t\n";
-					}
-
-					# Eat following lines that are part of the same definition
-					while ($ln < scalar @{$ns->{lines}}) {
-						$t = $ns->{lines}[$ln++];
-						#print STDERR "** eat? $t\n";
-						# Ignore certain lines
-						if ($t =~ /^#[#*:]/) {
-							#print STDERR "** eating: $t\n";
-							next;
-						# Anything else will be treated as the start of the definition lines
-						} else {
-							#print STDERR "** done eating: $t\n";
-							--$ln;
-							last;
-						}
-					}
-				# Anything else will be treated as the end of the Noun section
-				} else {
-					if ($t !~ /^\s*$/) {
-						print STDERR "E $w : $t\n";
-					}
-					last;
-				}
-			}
-			# END process definitions
+			$self->parse_definitions(\$ln, $ns, \$t, $w, $g);
 
 			# END process noun body
 		}
@@ -328,11 +277,17 @@ sub appendsection {
 	return $section;
 }
 
-#################################################################
+########################################################################
+
+#
+# This is normally a single line so we can pass it as a single parameter
+#
+# Slovak entries in particular use multiple lines however
+#
 
 sub parse_headword {
 	my $self = shift;
-	my $l = shift;
+	my ($w, $l) = @_;
 
 	my $success = 0;	# set to 0 if no matches succeed
 	my $g;				# gender: m:masculine f:feminine n:neuter c:common or some combination
@@ -342,6 +297,7 @@ sub parse_headword {
 		if ($l =~ /$headword_matchers->[$i]->[0]/) {
 			$success = 1;
 			++$headword_matchers->[$i]->[2];
+
 			if ($headword_matchers->[$i]->[1]      eq 'g1,n2?p') {
 				$g = $1; $n = 'p' if ($2);
 			} elsif ($headword_matchers->[$i]->[1] eq 'g1') {
@@ -363,11 +319,12 @@ sub parse_headword {
 			}
 			last;
 		}
-	};
+	}
 
 	if ($success) {
 		return { 'g' => $g, 'n' => $n };
 	} else {
+		print STDERR "UH $w : $l\n";
 		return undef;
 	}
 }
@@ -378,6 +335,90 @@ sub show_headword_log() {
 	for (my $i = 0; $i < scalar @$headword_matchers; ++$i) {
 		print $headword_matchers->[$i]->[2], ' : ', $headword_matchers->[$i]->[0], "\n";
 	}
+}
+
+#
+# The definitions section consists of all lines beginning with #
+# Each definition consists of a first line beginning with just #
+#  followed by 0 or more lines beginning with ##, #*, or #:
+#
+
+sub parse_definitions {
+	my $self = shift;
+	my ($ln, $ns, $t, $w, $g) = @_;
+
+	# Etymology, Noun, Sense numbers
+	my ($en, $nn, $sn) = ($ns->{etymcount}, $ns->{nouncount}, 0);
+
+	# START process definitions
+	while ($$ln < scalar @{$ns->{lines}}) {
+		$$t = $ns->{lines}[$$ln++];
+		++$sn;
+
+		# Definition line?
+		if ($$t =~ /^#/) {
+			if ($$t =~ /^#\s*(?:[aA]n?\s*)?\[\[([^\]#\|]*)(?:#[^\]\|]*)?(?:\|[^\]]*)?]]\s*[;,]\s*(?:[aA]n?\s*)?\[\[([^\]#\|]*)(?:#[^\]\|]*)?(?:\|[^\]]*)?]]\s*[;,]\s*(?:[aA]n?\s*)?\[\[([^\]#\|]*)(?:#[^\]\|]*)?(?:\|[^\]]*)?]]\.?\s*$/) {
+				my $tw1 = $1;
+				my $tw2 = $2;
+				my $tw3 = $3;
+
+				# A link such as [[#foo]] means the English word also uses this spelling
+				$tw1 = $tw1 ? $tw1 : $w;
+				$tw2 = $tw2 ? $tw2 : $w;
+				$tw3 = $tw3 ? $tw3 : $w;
+
+				print "$w $en.$nn.$sn.1 [$g] $tw1\n";
+				print "$w $en.$nn.$sn.2 [$g] $tw2\n";
+				print "$w $en.$nn.$sn.3 [$g] $tw3\n";
+			}
+			elsif ($$t =~ /^#\s*(?:[aA]n?\s*)?\[\[([^\]#\|]*)(?:#[^\]\|]*)?(?:\|[^\]]*)?]]\s*[;,]\s*(?:[aA]n?\s*)?\[\[([^\]#\|]*)(?:#[^\]\|]*)?(?:\|[^\]]*)?]]\.?\s*$/) {
+				my $tw1 = $1;
+				my $tw2 = $2;
+
+				# A link such as [[#foo]] means the English word also uses this spelling
+				$tw1 = $tw1 ? $tw1 : $w;
+				$tw2 = $tw2 ? $tw2 : $w;
+
+				print "$w $en.$nn.$sn.1 [$g] $tw1\n";
+				print "$w $en.$nn.$sn.2 [$g] $tw2\n";
+			}
+			elsif ($$t =~ /^#\s*(?:[aA]n?\s*)?\[\[([^\]#\|]*)(?:#[^\]\|]*)?(?:\|[^\]]*)?]]\.?\s*$/) {
+				my $tw = $1;
+
+				# Hebrew glosses sometimes contain bogus trailing text direction marks
+				# TODO this test does not work!
+				print STDERR "** gloss contains direction marks!\n" if ($tw =~ /\x{200f}/);
+				$tw =~ s/\x{200f}+$//;
+
+				# A link such as [[#foo]] means the English word also uses this spelling
+				$tw = $tw ? $tw : $w;
+
+				print "$w $en.$nn.$sn.1 [$g] $tw\n";
+			} else {
+				print STDERR "UD $w : $$t\n";
+			}
+
+			# Eat following lines that are part of the same definition
+			while ($$ln < scalar @{$ns->{lines}}) {
+				$$t = $ns->{lines}[$$ln++];
+				# Ignore certain lines
+				if ($$t =~ /^#[#*:]/) {
+					next;
+				# Anything else will be treated as the start of the definition lines
+				} else {
+					--$$ln;
+					last;
+				}
+			}
+		# Anything else will be treated as the end of the definitions section
+		} else {
+			if ($$t !~ /^\s*$/) {
+				print STDERR "ED $w : $$t\n";
+			}
+			last;
+		}
+	}
+	# END process definitions
 }
 
 1;
