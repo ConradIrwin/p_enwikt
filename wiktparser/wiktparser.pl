@@ -9,27 +9,72 @@ use strict;
 #my ($lang_code, $lang_pat, $lang_g) = ('ca', '^Catalan$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('cs', '^Czech$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('da', '^Danish$', [] );
-my ($lang_code, $lang_pat, $lang_g) = ('de', '^German$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('de', '^German$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('el', '^Greek$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('eo', '^Esperanto$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('es', '^Spanish$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('fa', '^(Persian|Farsi)$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('fr', '^French$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('he', '^Hebrew$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('hi', '^Hindi$', [] );
+my ($lang_code, $lang_pat, $lang_g) = ('hr', '^Croatian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('hu', '^Hungarian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('is', '^Icelandic$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('ko', '^Korean$', [] );
-#my ($lang_code, $lang_pat, $lang_g) = ('lv', '^Latvian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('lt', '^Lithuanian$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('lv', '^Latvian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('mi', '^M[aā]ori$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('mn', '^Mongolian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('nl', '^Dutch$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('no', '^Norwegian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('pl', '^Polish$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('pt', '^Portuguese$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('ro', '^R[ou]manian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('ru', '^Russian$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sk', '^Slovak(?:ian)?$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sl', '^Sloven(?:e|ian)$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sv', '^Swedish$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('sw', '^(?:Ki[sS]|S)wahili$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('th', '^Thai$', [] );
+#my ($lang_code, $lang_pat, $lang_g) = ('vi', '^Vietnamese$', [] );
 #my ($lang_code, $lang_pat, $lang_g) = ('yi', '^Yiddish$', [] );
+
+my $headword_matchers = [
+	# '''headword''' {{m}}
+	[ "^'''.*?''',?\\s+{{(m|f|n|c|mf|fm)(\\.?pl\\.?)?}}",								'g1,n2?p' ],
+	# '''headword''' ''m''
+	[ "^'''.*?''',?\\s+''([mfnc])\\.?''",												'g1' ],
+	# Gender followed by ambiguous plurality info
+	[ "^'''.*?'''\\s+''([mfnc]), ?pl(?:ural)?''(.*)",									'g1,n2:p' ],
+	# '''headword''' ''m pl''
+	[ "^'''.*?'''\\s+''([mfnc]) ?pl(?:ural)?''",										'g1,np' ],
+	# Two genders separated by slash or comma
+	# '''headword''' ''m/f''			'''headword''' ''m, f''
+	[ "^'''.*?'''\\s+''([mfnc])(?:\\/|, )([mfnc])''",									'g1+2' ],
+	# '''headword''' (translit) {{m}}
+	[ "^'''.*?'''(?:\\s+\\(.*?\\))?(?:\\s+{{([mfnc])}})?\\s*\$",						'g1?1:-' ],
+	# '''headword''' (translit) ''m''
+	[ "^'''.*?'''(?:\\s+\\(.*?\\))?(?:\\s+''([mfnc])'')?\\s*\$",						'g1?1:-' ],
+	# {{he-link|headword}} {{m}}
+	[ "^{{he-link\\|.*?}}(?:\\s+{{([mfnc])}})?\\s*\$",									'g1?1:-' ],
+	# '''headword''' {{?????|translit}} {{m}}
+	[ "^'''.*?'''(?:\\s+{{(?:IPAchar|unicode)\\|.*?}})?(?:\\s+{{([mfnc])}})?\\s*\$",	'g1?1:-' ],
+	# '''headword''' {{?????|translit}} ''m''
+	[ "^'''.*?'''(?:\\s+{{(?:IPAchar|unicode)\\|.*?}})?(?:\\s+''([mfnc])'')?\\s*\$",	'g1?1:-' ],
+	# '''headword'''
+	[ "^'''.*?'''\\s*\$",																'g-' ],
+	# '''{{Script|headword}}''' (translit) {{m}}
+	# '''{{SCchar|headword}}''' (translit) {{m}}
+	# {{SCchar|'''headword'''}} (translit) {{m}}
+	# {{SCchar|headword}} (translit) {{m}}
+	# Careful - this one is actually for "mf" pairs (not invariants)
+	[ "^{{$lang_code-noun-mf\\|f(?:emale)?=",											'gm' ],
+	[ "^{{$lang_code-noun-(m|f|n|c|mf|fm)\\b",											'g1' ],
+	[ "^{{$lang_code-noun2?\\|(m|f|n|c|mf|fm)\\b",										'g1' ],
+	[ "^{{$lang_code-noun2?\\|g(?:ender)?=(m|f|n|c|mf|fm)\\b",							'g1' ],
+	[ "^{{infl\\|$lang_code\\|noun(?:\\|g(?:ender)?=([mfnc]))?\\b",						'g1?1:-' ],
+	[ "^'''.*?'''\\s+\\((?:'')?plural:?(?:'')?:? '''.*?'''\\)(?:\\s+{{([mfnc])}})?",	'g1?1:-' ],
+];
 
 my @scope;
 
@@ -97,6 +142,7 @@ while (1) {
 
 	if ($xline !~ /<title>.*<\/title>/) {
 		print STDERR "** no more pages";
+		show_headword_log();
 		exit;
 	}
 
@@ -275,56 +321,9 @@ while (1) {
 				++$tried_to_parse;
 
 				# Gender template
-				{
-				if ($l =~ /^'''.*?''',?\s+{{(m|f|n|c|mf|fm)(\.?pl\.?)?}}/) {
-					$g = $1;
-					$n = 'p' if ($2);
-				# Gender in italics
-				} elsif ($l =~ /^'''.*?''',?\s+''([mfnc])\.?''/) {
-					$g = $1;
-				# Gender followed by ambiguous plurality info
-				} elsif ($l =~ /^'''.*?'''\s+''([mfnc]), ?pl(?:ural)?''(.*)/) {
-					$g = $1;
-					$n = 'p' unless ($2);
-				# Gender and plurality
-				} elsif ($l =~ /^'''.*?'''\s+''([mfnc]) ?pl(?:ural)?''/) {
-					$g = $1;
-					$n = 'p';
-				# Two genders separated by comma
-				} elsif ($l =~ /^'''.*?'''\s+''([mfnc])(?:\/|, )([mfnc])''/) {
-					$g = $1 . $2;
-				# '''headword''' (translit) {{g}}
-				} elsif ($l =~ /^'''.*?'''(?:\s+\(.*?\))?(?:\s+{{([mfnc])}})?\s*$/) {
-					$g = $1 ? $1 : '-';
-				# '''headword''' (translit) ''g''
-				} elsif ($l =~ /^'''.*?'''(?:\s+\(.*?\))?(?:\s+''([mfnc])'')?\s*$/) {
-					$g = $1 ? $1 : '-';
-				# {{he-link|headword}} {{g}}
-				} elsif ($l =~ /^{{he-link\|.*?}}(?:\s+{{([mfnc])}})?\s*$/) {
-					$g = $1 ? $1 : '-';
-				# '''headword''' {{?????|translit}} {{g}}
-				} elsif ($l =~ /^'''.*?'''(?:\s+{{(?:IPAchar|unicode)\|.*?}})?(?:\s+{{([mfnc])}})?\s*$/) {
-					$g = $1 ? $1 : '-';
-				# '''headword''' {{?????|translit}} ''g''
-				} elsif ($l =~ /^'''.*?'''(?:\s+{{(?:IPAchar|unicode)\|.*?}})?(?:\s+''([mfnc])'')?\s*$/) {
-					$g = $1 ? $1 : '-';
-				# '''headword'''
-				} elsif ($l =~ /^'''.*?'''\s*$/) {
-					$g = '-';
-				# Careful - this one is actually for "mf" pairs (not invariants)
-				} elsif ($l =~ /^{{$lang_code-noun-mf\|f(?:emale)?=/o) {										# }}
-					$g = 'm';
-				} elsif ($l =~ /^{{$lang_code-noun-(m|f|n|c|mf|fm)\b/o) {										# }}
-					$g = $1;
-				} elsif ($l =~ /^{{$lang_code-noun2?\|(m|f|n|c|mf|fm)\b/o) {									# }}
-					$g = $1;
-				} elsif ($l =~ /^{{$lang_code-noun2?\|g(?:ender)?=(m|f|n|c|mf|fm)\b/o) {						# }}
-					$g = $1;
-				} elsif ($l =~ /^{{infl\|$lang_code\|noun(?:\|g(?:ender)?=([mfnc]))?\b/o) {						# }}
-					$g = $1 ? $1 : '-';
-				} elsif ($l =~ /^'''.*?'''\s+\((?:'')?plural:?(?:'')?:? '''.*?'''\)(?:\s+{{([mfnc])}})?/) {
-					$g = $1 ? $1 : '-';
-				}
+				if ((my $hw = parse_headword($l))) {
+					$g = $hw->{g};
+					$n = $hw->{n}
 				}
 
 				if ($g) {
@@ -424,10 +423,13 @@ while (1) {
 		if ($maxpages != 0 && $pagecounter >= $maxpages) {
 			print STDERR "** max number of pages parsed\n";
 			print "</wiktionary>\n";
+			show_headword_log();
 			exit;
 		}
 	}
 } # while (1)
+
+######################################################
 
 sub emitsection {
 	my $s = shift;
@@ -454,7 +456,7 @@ sub emitsection {
 }
 
 #
-# @scope is a global, should be a member i guess
+# @scope is a global, should be a member I guess
 #
 
 sub appendsection {
@@ -470,3 +472,53 @@ sub appendsection {
 
 	return $section;
 }
+
+################################################################
+
+sub parse_headword {
+	my $l = shift;
+
+	my $success = 0;	# set to 0 if no matches succeed
+	my $g;				# gender: m:masculine f:feminine n:neuter c:common or some combination
+	my $n;				# number: s:singular p:plural d:dual
+
+	for (my $i = 0; $i < scalar @$headword_matchers; ++$i) {
+		if ($l =~ /$headword_matchers->[$i]->[0]/) {
+			$success = 1;
+			++$headword_matchers->[$i]->[2];
+			if ($headword_matchers->[$i]->[1]      eq 'g1,n2?p') {
+				$g = $1; $n = 'p' if ($2);
+			} elsif ($headword_matchers->[$i]->[1] eq 'g1') {
+				$g = $1;
+			} elsif ($headword_matchers->[$i]->[1] eq 'g1,n2:p') {
+				$g = $1; $n = 'p' unless ($2);
+			} elsif ($headword_matchers->[$i]->[1] eq 'g1,np') {
+				$g = $1; $n = 'p';
+			} elsif ($headword_matchers->[$i]->[1] eq 'g1+2') {
+				$g = $1 . $2;
+			} elsif ($headword_matchers->[$i]->[1] eq 'g1?1:-') {
+				$g = $1 ? $1 : '-';
+			} elsif ($headword_matchers->[$i]->[1] eq 'g-') {
+				$g = '-';
+			} elsif ($headword_matchers->[$i]->[1] eq 'gm') {
+				$g = 'm';
+			} else {
+				print STDERR "** unknown gender/number opcode '", $headword_matchers->[$i]->[1], "'\n";
+			}
+			last;
+		}
+	};
+
+	if ($success) {
+		return { 'g' => $g, 'n' => $n };
+	} else {
+		return undef;
+	}
+}
+
+sub show_headword_log() {
+	for (my $i = 0; $i < scalar @$headword_matchers; ++$i) {
+		print $headword_matchers->[$i]->[2], ' : ', $headword_matchers->[$i]->[0], "\n";
+	}
+}
+
