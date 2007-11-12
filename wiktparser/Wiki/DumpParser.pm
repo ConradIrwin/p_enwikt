@@ -33,6 +33,8 @@ sub set_text_handler {
 	$self->{text_handler} = $handler;
 }
 
+############################################
+
 sub parse {
 	my $self = shift;
 	my ($xline) = @_;
@@ -40,9 +42,7 @@ sub parse {
 	my $maxpages = 0;
 	my $pagecounter = 0;
 
-	my %langnamestocodes;
 	my %namespaces;
-	my %titles;
 
 	while ($$xline = <STDIN>) {
 		last if ($$xline =~ /<namespaces>/);
@@ -90,7 +90,7 @@ sub parse {
 		}
 
 		if ($$xline !~ /<title>.*<\/title>/) {
-			print STDERR "** no more pages";
+			print STDERR "** no more pages\n";
 			return;
 		}
 
