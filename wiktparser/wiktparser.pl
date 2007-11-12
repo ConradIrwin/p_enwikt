@@ -3,7 +3,7 @@
 
 use strict;
 
-my $maxpages = 100000;
+my $maxpages = 10;
 my $pagecounter = 0;
 
 my %langnamestocodes;
@@ -110,13 +110,15 @@ while (1) {
 
 		my @scope;
 
-		my $page;				# a page is an article
+		my $page;					# a page is an article
 
 		$page = {};
-		$page->{title} = $title;
-		$page->{sections} = [];		# each heading starts a section
+		$page->{title} = 1;#$title;
+		$page->{sections} = 1;#[];		# each heading starts a section
+		$page->{raw} = {};				# level 1 heading
 
-		@scope[1] = $page;
+		#@scope[1] = $page;
+		@scope[0] = $page->{raw};
 
 		my $tline;
 
@@ -125,6 +127,31 @@ while (1) {
 		my $section;				# each heading starts a section
 
 		my $prevsection;
+
+		$section = {};
+		#$section->{unbalanced} = (length($1) != length($3));
+		#my $level = length($1) < length($3) ? length($1) : length($3);
+		#$section->{level} = $level;
+		my $level = 1;
+		$section->{level} = $level;
+		$section->{heading} = {};
+		#my $headinglabel = $2;
+		#if ($headinglabel =~ /^\[\[\s*(?:.*\|)?(.*?)\s*\]\]$/) {
+		#	$headinglabel = $1;
+		#}
+		#$section->{heading}->{label} = $headinglabel;
+		$section->{heading}->{label} = $title;
+		$section->{lines} = [];
+		$section->{sections} = [];
+
+		$section->{parent} = @scope[$level - 1];
+		push @{@scope[$level - 1]->{sections}}, $section;
+
+		for (my $l = $level; $l <= 7; ++$l) {
+			@scope[$l] = $section;
+		}
+
+		$prevsection = $section;
 
 		# Each line of page wikitext
 		while (1) {
@@ -167,23 +194,6 @@ while (1) {
 					#	$entry->{lang}->{code} = $langnamestocodes{$langname}[0];
 					#}
 					#$entry->{sections} = [];
-
-					#$entry->{parent} = $page;
-					#push @{$page->{sections}}, $entry;
-
-					#$section->{parent} = $page;
-					#push @{$page->{sections}}, $section;
-
-					#$section->{parent} = @scope[$level - 1];
-					#push @{@scope[$level - 1]->{sections}}, $section;
-
-					#for (my $l = $level; $l <= 7; ++$l) {
-					#	@scope[$l] = $section;
-					#}
-
-					#for (my $l = $level; $l <= 7; ++$l) {
-					#	@scope[$l] = $entry;
-					#}
 				}
 
 				# Other headings
@@ -191,12 +201,6 @@ while (1) {
 					if ($prevsection->{level} - $level < -1) {
 						print STDERR "$page->{title}::$section->{heading}->{label} prev level $prevsection->{level}, this level $level\n";
 					}
-					#$section->{parent} = @scope[$level - 1];
-					#push @{@scope[$level - 1]->{sections}}, $section;
-
-					#for (my $l = $level; $l <= 7; ++$l) {
-					#	@scope[$l] = $section;
-					#}
 				}
 
 				$section->{parent} = @scope[$level - 1];
@@ -220,10 +224,17 @@ while (1) {
 		} # while (1)
 
 		# Emit page
-		print "<a c=\"" . scalar @{$page->{sections}} . "\" l=\"1\" h=\"$page->{title}\">\n";
-		foreach (@{$page->{sections}}) {
-			#print "<e c=\"" . scalar @{$_->{sections}} . "\" l=\"2\" h=\"$_->{lang}->{label}\">\n";
-			print "<e c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
+		#print "<a c=\"" . scalar @{$page->{sections}} . "\" l=\"1\" h=\"$page->{title}\">\n";
+		#print "<a c=\"" . scalar @{$page->{raw}->{sections}} . "\" l=\"1\" h=\"$page->{title}\">\n";
+		#foreach (@{$page->{lines}}) {
+		#	print "<x>$_</x>\n";
+		#}
+		#foreach (@{$page->{sections}}) {
+		$_ = $page->{raw};
+		#foreach (@{$page->{raw}->{sections}}) {
+		#	print "<e c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
+		foreach (@{$_->{sections}}) {
+			print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
 			if ($_->{unbalanced}) {
 				print "<unbalanced />\n";
 			}
@@ -270,9 +281,10 @@ while (1) {
 				}
 				print "</s>\n";
 			}
-			print "</e>\n";
+			#print "</e>\n";
+			print "</s>\n";
 		}
-		print "</a>\n";
+		#print "</a>\n";
 	}
 
 	# Skip remainder of page
