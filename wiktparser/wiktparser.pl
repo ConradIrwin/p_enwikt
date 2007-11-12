@@ -129,8 +129,7 @@ while (1) {
 		$section = {};
 		my $level = 1;
 		$section->{level} = $level;
-		$section->{heading} = {};
-		$section->{heading}->{label} = $title;
+		$section->{heading} = $title;
 		$section->{lines} = [];
 		$section->{sections} = [];
 
@@ -156,12 +155,11 @@ while (1) {
 				$section->{unbalanced} = (length($1) != length($3));
 				my $level = length($1) < length($3) ? length($1) : length($3);
 				$section->{level} = $level;
-				$section->{heading} = {};
 				my $headinglabel = $2;
 				if ($headinglabel =~ /^\[\[\s*(?:.*\|)?(.*?)\s*\]\]$/) {
 					$headinglabel = $1;
 				}
-				$section->{heading}->{label} = $headinglabel;
+				$section->{heading} = $headinglabel;
 				$section->{lines} = [];
 				$section->{sections} = [];
 
@@ -189,7 +187,7 @@ while (1) {
 				# Other headings
 				else {
 					if ($prevsection->{level} - $level < -1) {
-						print STDERR "$page->{title}::$section->{heading}->{label} prev level $prevsection->{level}, this level $level\n";
+						print STDERR "$page->{title}::$section->{heading} prev level $prevsection->{level}, this level $level\n";
 					}
 				}
 
@@ -243,7 +241,7 @@ sub emitsection {
 		print "<x>$_</x>\n";
 	}
 	foreach (@{$s->{sections}}) {
-		print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
+		print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}\">\n";
 		if ($_->{unbalanced}) {
 			print "<unbalanced />\n";
 		}
