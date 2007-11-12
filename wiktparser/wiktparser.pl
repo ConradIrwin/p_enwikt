@@ -113,11 +113,9 @@ while (1) {
 		my $page;					# a page is an article
 
 		$page = {};
-		$page->{title} = 1;#$title;
-		$page->{sections} = 1;#[];		# each heading starts a section
-		$page->{raw} = {};				# level 1 heading
+		$page->{raw} = {};			# level 1 heading, root for tree of headings
+		$page->{cooked} = {};
 
-		#@scope[1] = $page;
 		@scope[0] = $page->{raw};
 
 		my $tline;
@@ -129,17 +127,9 @@ while (1) {
 		my $prevsection;
 
 		$section = {};
-		#$section->{unbalanced} = (length($1) != length($3));
-		#my $level = length($1) < length($3) ? length($1) : length($3);
-		#$section->{level} = $level;
 		my $level = 1;
 		$section->{level} = $level;
 		$section->{heading} = {};
-		#my $headinglabel = $2;
-		#if ($headinglabel =~ /^\[\[\s*(?:.*\|)?(.*?)\s*\]\]$/) {
-		#	$headinglabel = $1;
-		#}
-		#$section->{heading}->{label} = $headinglabel;
 		$section->{heading}->{label} = $title;
 		$section->{lines} = [];
 		$section->{sections} = [];
@@ -224,67 +214,7 @@ while (1) {
 		} # while (1)
 
 		# Emit page
-		#print "<a c=\"" . scalar @{$page->{sections}} . "\" l=\"1\" h=\"$page->{title}\">\n";
-		#print "<a c=\"" . scalar @{$page->{raw}->{sections}} . "\" l=\"1\" h=\"$page->{title}\">\n";
-		#foreach (@{$page->{lines}}) {
-		#	print "<x>$_</x>\n";
-		#}
-		#foreach (@{$page->{sections}}) {
-		$_ = $page->{raw};
-		#foreach (@{$page->{raw}->{sections}}) {
-		#	print "<e c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
-		foreach (@{$_->{sections}}) {
-			print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
-			if ($_->{unbalanced}) {
-				print "<unbalanced />\n";
-			}
-			foreach (@{$_->{lines}}) {
-				print "<x>$_</x>\n";
-			}
-			foreach (@{$_->{sections}}) {
-				print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
-				if ($_->{unbalanced}) {
-					print "<unbalanced />\n";
-				}
-				foreach (@{$_->{lines}}) {
-					print "<x>$_</x>\n";
-				}
-				foreach (@{$_->{sections}}) {
-					print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
-					if ($_->{unbalanced}) {
-						print "<unbalanced />\n";
-					}
-					foreach (@{$_->{lines}}) {
-						print "<x>$_</x>\n";
-					}
-					foreach (@{$_->{sections}}) {
-						print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
-						if ($_->{unbalanced}) {
-							print "<unbalanced />\n";
-						}
-						foreach (@{$_->{lines}}) {
-							print "<x>$_</x>\n";
-						}
-						foreach (@{$_->{sections}}) {
-							print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
-							if ($_->{unbalanced}) {
-								print "<unbalanced />\n";
-							}
-							foreach (@{$_->{lines}}) {
-								print "<x>$_</x>\n";
-							}
-							print "</s>\n";
-						}
-						print "</s>\n";
-					}
-					print "</s>\n";
-				}
-				print "</s>\n";
-			}
-			#print "</e>\n";
-			print "</s>\n";
-		}
-		#print "</a>\n";
+		emitsection($page->{raw});
 	}
 
 	# Skip remainder of page
@@ -305,3 +235,20 @@ while (1) {
 		}
 	}
 } # while (1)
+
+sub emitsection {
+	my $s = shift;
+
+	foreach (@{$s->{lines}}) {
+		print "<x>$_</x>\n";
+	}
+	foreach (@{$s->{sections}}) {
+		print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}->{label}\">\n";
+		if ($_->{unbalanced}) {
+			print "<unbalanced />\n";
+		}
+		emitsection($_);
+		print "</s>\n";
+	}
+}
+
