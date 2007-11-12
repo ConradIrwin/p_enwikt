@@ -3,7 +3,7 @@
 
 use strict;
 
-my $maxpages = 10;
+my $maxpages = 0;
 my $pagecounter = 0;
 
 my %langnamestocodes;
@@ -120,11 +120,13 @@ while (1) {
 
 		my $tline;
 
-		my $entry;					# each language heading starts an entry
+		my $section;				# each heading starts a new section
 
-		my $section;				# each heading starts a section
+		my $entry;					# each language heading starts a new entry
 
 		my $prevsection;
+
+		$page->{title} = $title;
 
 		$section = {};
 		my $level = 1;
@@ -164,7 +166,7 @@ while (1) {
 				$section->{sections} = [];
 
 				# Language heading
-				if ($level ==2) {
+				if ($level == 2) {
 					my $langname = $headinglabel;
 					#my $langcode = $langnamestocodes{$langname};
 					my $lang;
@@ -174,7 +176,14 @@ while (1) {
 						$lang = $langname;
 					}
 					#push @{$page->{langs}}, $lang . ':' . $level;
-					#$entry = {};
+					$entry = {};
+					if ($langname eq 'English') {
+						$entry->{isen} = 1;
+						$page->{hasen} = 1;
+					} elsif ($langname eq 'Spanish') {
+						$entry->{ises} = 1;
+						$page->{hases} = 1;
+					}
 					#$entry->{emitme} = 0;
 					#$entry->{lang} = {};
 					#$entry->{lang}->{label} = $langname;
@@ -186,8 +195,11 @@ while (1) {
 
 				# Other headings
 				else {
+					# Section more than 1 level deeper than its parent?
 					if ($prevsection->{level} - $level < -1) {
+						$section->{toodeep} = 1;
 						print STDERR "$page->{title}::$section->{heading} prev level $prevsection->{level}, this level $level\n";
+						#print STDERR "$page->{raw}->{sections}[0]->{heading}::$section->{heading} prev level $prevsection->{level}, this level $level\n";
 					}
 				}
 
@@ -202,17 +214,15 @@ while (1) {
 			} # Heading
 			
 			else {
-				# Not heading
-				if ($section) {
-					push @{$section->{lines}}, $tline;
-				}
+				# Not heading, just plain lines
+				push @{$section->{lines}}, $tline;
 			}
 
 			last unless ($xline = <STDIN>);
 		} # while (1)
 
 		# Emit page
-		emitsection($page->{raw});
+		emitsection($page->{raw}->{sections}[0]);
 	}
 
 	# Skip remainder of page
@@ -237,16 +247,48 @@ while (1) {
 sub emitsection {
 	my $s = shift;
 
+	my $ot = '<s';
+	#$ot .= ' c="' . scalar @{$_->{sections}} . '"';
+	$ot .= " l=\"$s->{level}\"";
+	$ot .= " h=\"$s->{heading}\"";
+	if ($s->{toodeep}) {
+		$ot .= ' td="1"';
+	}
+	if ($s->{unbalanced}) {
+		$ot .= ' u="1"';
+	}
+	$ot .= ">\n";
+	print $ot;
 	foreach (@{$s->{lines}}) {
 		print "<x>$_</x>\n";
 	}
 	foreach (@{$s->{sections}}) {
-		print "<s c=\"" . scalar @{$_->{sections}} . "\" l=\"$_->{level}\" h=\"$_->{heading}\">\n";
-		if ($_->{unbalanced}) {
-			print "<unbalanced />\n";
-		}
 		emitsection($_);
-		print "</s>\n";
 	}
+	print "</s>\n";
 }
+
+#sub emitsection {
+#	my $s = shift;
+#
+#	foreach (@{$s->{lines}}) {
+#		print "<x>$_</x>\n";
+#	}
+#	foreach (@{$s->{sections}}) {
+#		my $ot = '<s';
+#		#$ot .= ' c="' . scalar @{$_->{sections}} . '"';
+#		$ot .= " l=\"$_->{level}\"";
+#		$ot .= " h=\"$_->{heading}\"";
+#		if ($_->{toodeep}) {
+#			$ot .= ' td="1"';
+#		}
+#		if ($_->{unbalanced}) {
+#			$ot .= ' u="1"';
+#		}
+#		$ot .= ">\n";
+#		print $ot;
+#		emitsection($_);
+#		print "</s>\n";
+#	}
+#}
 
