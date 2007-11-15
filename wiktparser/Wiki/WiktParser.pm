@@ -49,8 +49,6 @@ my $headword_matchers = [
 sub new {
 	my $class = shift;
 	my $self = bless {}, $class;
-
-	$self->{article_handler} = \&default_article_handler;
 	return $self;
 }
 
@@ -80,40 +78,60 @@ sub set_lang_code {
 	}
 }
 
+#
+# Parse wikitext of a Wiktionary page
+#
+
 sub parse {
 	my $self = shift;
-	my ($ns, $pagecounter, $title, $xline, $lang_pat, $tried_to_parse, $parsed_ok, $gendercount) = @_;
+	my (
+		$ns,
+	   	$title,
+	   	$xline,
+	   	$lang_pat,
+	   	$tried_to_parse,
+	   	$parsed_ok,
+	   	$gendercount
+	) = @_;
 
 	if ($ns eq '') {
+		# Custom article handler
 		if ($self->{article_handler}) {
-			if ($self->{article_handler} == \&default_article_handler) {
-				$self->default_article_handler($pagecounter, $title, $xline,
-					$lang_pat, $tried_to_parse, $parsed_ok, $gendercount);
-			} else {
-				&{$self->{article_handler}}($pagecounter, $title, $xline,
-					$lang_pat, $tried_to_parse, $parsed_ok, $gendercount);
-			}
+			&{$self->{article_handler}}($xline);
+
+		# Built-in article parser method
+		} else {
+			$self->parse_article(
+				$title,
+				$xline,
+				$lang_pat,
+				$tried_to_parse,
+				$parsed_ok,
+				$gendercount);
 		}
 	# TODO localize by using namespace numbers
 	} elsif ($ns eq 'Template') {
 		if ($self->{template_handler}) {
-			&{$self->{template_handler}}($pagecounter, $title, $xline,
-				$lang_pat, $tried_to_parse, $parsed_ok, $gendercount);
+			&{$self->{template_handler}}($xline);
 		}
 	}
 }
 
-sub default_article_handler {
+sub parse_article {
 	my $self = shift;
-	my ($pagecounter, $title, $xline, $lang_pat, $tried_to_parse, $parsed_ok, $gendercount) = @_;
-
-	$$pagecounter++;
+	my (
+	   	$title,
+	   	$xline,
+	   	$lang_pat,
+	   	$tried_to_parse,
+	   	$parsed_ok,
+	   	$gendercount) = @_;
 
 	my $page;					# a page is an article
 
 	$page = {};
 	$page->{raw} = {};			# level 1 heading, root for tree of headings
-	$page->{cooked} = {};
+	$page->{cooked} = {};		# TODO not yet used
 
 	@scope[0] = $page->{raw};
 

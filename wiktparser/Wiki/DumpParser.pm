@@ -3,10 +3,43 @@ package Wiki::DumpParser;
 
 use strict;
 
+# Format of MediaWiki dump file
+# mediawiki: xmlns, xmlns:xsi, xsi:SchemaLocation, version, xml:lang
+#  siteinfo
+#   sitename
+#   base
+#   generator
+#   case
+#   namespaces
+#    namespace: key
+#    namespace...
+# page
+#  title
+#  id
+#  restrictions
+#  revision
+#   id
+#   timestamp
+#   contributor
+#    username
+#    id
+#   minor
+#   comment
+#   text
+# page...
+
 sub new {
 	my $class = shift;
 	my $self = bless {}, $class;
+	$self->{_namespaces} = {};
+	$self->{_maxpages} = 0;
+	$self->{_pagecount} = 0;
 	return $self;
+}
+
+sub set_maxpages {
+	my ($self, $mp) = @_;
+	$self->{_maxpages} = $mp;
 }
 
 sub set_title_handler {
@@ -33,55 +66,76 @@ sub set_text_handler {
 	$self->{text_handler} = $handler;
 }
 
+#
+# With no argument returns total number of pages so far for all namespaces
+# Otherwise returns total number of pages so far for given namespace only
+#
+# TODO support namespace by number of by name
+#
+
+sub get_pagecount {
+	my ($self, $ns) = @_;
+
+	return $self->{_pagecount};
+}
+
 ############################################
 
 sub parse {
 	my $self = shift;
-	my ($xline) = @_;
+	my $xline = shift;
 
-	my $maxpages = 0;
-	my $pagecounter = 0;
-
-	my %namespaces;
+	# Skip stuff before the <namespaces> section
 
 	while ($$xline = <STDIN>) {
 		last if ($$xline =~ /<namespaces>/);
 	}
 
+	# We read everything and never found <namespaces>
 	if ($$xline !~ /<namespaces>/) {
 		print STDERR "** namespaces section not found\n";
 		exit;
 	}
 
-	print STDERR "** found namespaces\n";
+	# Handle <namespaces>
 
 	while ($$xline = <STDIN>) {
-		if ($$xline =~ /<namespace key="-?\d+"(.*)>/) {
-			my $rest = $1;
+		if ($$xline =~ /<namespace key="(-?\d+)"(.*)>/) {
+			my ($key, $rest) = ($1, $2);
 			if ($rest =~ />(.*)<\/namespace/) {
-				$namespaces{$1} = 1;
+				$self->{_namespaces}->{$1} = { 'key' => $key, 'count' => 0, 'name' => $1 };
+			} else {
+				$self->{_namespaces}->{''} = { 'key' => $key, 'count' => 0 };
 			}
 		} else {
 			last;
 		}
 	}
 
+	# Premature EOF
 	if ($$xline !~ /<\/namespaces>/) {
 		print STDERR "** end of namespaces section not found\n";
 		exit;
 	}
 
-	print STDERR "** namespaces done\n";
+	#foreach my $ns (sort {$self->{_namespaces}->{$a}->{key} <=> $self->{_namespaces}->{$b}->{key}} keys %{$self->{_namespaces}}) {
+	#	print STDERR "** '", $ns, '\' -> ', $self->{_namespaces}->{$ns}->{key}, "\n";
+	#}
 
-	my $nsre = '^(' . join('|', 'webster 1913', keys %namespaces) . '):(.*)$';
+	# Build regex that can tell a namespaced title from other titles with colons
+	# Also handles "pseudonamespaces"
+	my $nsre = '^(' . join('|', 'webster 1913', keys %{$self->{_namespaces}}) . '):(.*)$';
 
-	print "<wiktionary>\n";
+	# After <namespaces> comes a huge series of <page>s
 
 	# Each line of dump file
 	while (1) {
 
+		my $ns = '';
 		my $title = '';
 
+		# Skip anything before next <title>
+		#  Currently </text> </revision> </page> <page>
 		while ($$xline = <STDIN>) {
 			if ($$xline =~ /<title>(.*)<\/title>/) {
 				$title = $1;
@@ -89,18 +143,20 @@ sub parse {
 			}
 		}
 
+		# EOF
 		if ($$xline !~ /<title>.*<\/title>/) {
 			print STDERR "** no more pages\n";
 			return;
 		}
-
-		my $ns = '';
 
 		# Check namespace
 		if ($title =~ /$nsre/o) {
 			$ns = $1;
 			$title = $2;
 		}
+
+		++$self->{_pagecount};
+		++$self->{_namespaces}->{$ns}->{count};
 
 		if ($self->{title_handler}) {
 			&{$self->{title_handler}}( $ns, $title );
@@ -137,7 +193,7 @@ sub parse {
 
 		# Enough pages processed?
 		if ($ns eq '') {
-			if ($maxpages != 0 && $pagecounter >= $maxpages) {
+			if ($self->{_maxpages} != 0 && $self->{_pagecount} >= $self->{_maxpages}) {
 				print STDERR "** max number of pages parsed\n";
 				print "</wiktionary>\n";
 				return;

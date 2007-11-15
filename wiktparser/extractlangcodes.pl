@@ -8,11 +8,12 @@ use Wiki::WiktParser;
 
 my $namespace;
 my $title;
-my $pagecounter = 0;
-my $xline;
-my $tried_to_parse = 0;
-my $parsed_ok = 0;
-my %gendercount;
+
+my $line;						# TODO this is used as though it's a member of both parsers
+
+my $tried_to_parse = 0;			# TODO should be part of Wiki::WiktParser
+my $parsed_ok = 0;				# TODO should be part of Wiki::WiktParser
+my %gendercount;				# TODO should be part of Wiki::WiktParser
 
 my %langnamestocodes;
 my $langcodetemplate_counter;
@@ -32,9 +33,7 @@ if ($dumpparser && $wiktparser) {
 	$wiktparser->set_template_handler( \&template_handler );
 	$wiktparser->set_article_handler( \&article_handler );
 
-	$dumpparser->parse( \$xline );
-
-	$wiktparser->show_headword_log;
+	$dumpparser->parse( \$line );
 }
 
 print STDERR "** extractlangcodes.pl done\n";
@@ -50,16 +49,23 @@ sub title_handler {
 }
 
 sub text_handler {
-	$wiktparser->parse( $namespace, \$pagecounter, $title, \$xline, undef, \$tried_to_parse, \$parsed_ok, \%gendercount );
+	$wiktparser->parse(
+		$namespace,
+		$title,
+		\$line,
+		undef,
+		\$tried_to_parse,
+		\$parsed_ok,
+		\%gendercount );
 }
 
 sub template_handler {
-	my ($pagecounter, $title2, $xline, undef, $tried_to_parse, $parsed_ok, $gendercount) = @_;
+	my $line = shift;
 
 	if ($title =~ /^(lang:)?([a-z][a-z][a-z]?)$/) {
 		my ($which, $langcode) = ($1, $2);
 
-		if ($$xline =~ /<text xml:space="preserve">(.*?)&lt;noinclude&gt;\[\[Category:Language templates|$title]]&lt;\/noinclude&gt;<\/text>/) {
+		if ($$line =~ /<text xml:space="preserve">(.*?)&lt;noinclude&gt;\[\[Category:Language templates|$title]]&lt;\/noinclude&gt;<\/text>/) {
 			my $langname = $1;
 			if ($langname =~ /^\[\[(?:.*\|)?(.*?)]]$/) {
 				$langname = $1;
@@ -80,11 +86,11 @@ sub template_handler {
 }
 
 sub article_handler {
-	my ($pagecounter, $title2, $xline, undef, $tried_to_parse, $parsed_ok, $gendercount) = @_;
+	my $line = shift;
 
 	# Each line of page wikitext
 	while (1) {
-		$$xline =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
+		$$line =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
 		my ($tline, $post) = ($1, $2);
 
 		last if ($post ne '');
@@ -103,7 +109,7 @@ sub article_handler {
 			print STDERR "** iw  $interwiktionary_counter: $langcode -> $title\n";
 		}
 
-		last unless ($$xline = <STDIN>);
+		last unless ($$line = <STDIN>);
 	}
 }
 

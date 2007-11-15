@@ -12,7 +12,7 @@ use Wiki::WiktParser;
 my %opts;
 my $lang;
 
-getopt('lL', \%opts);
+getopt('lLx', \%opts);
 
 if ($opts{l} && $opts{L}) {
 	die "Use either -l for language code or -L for language name\n";
@@ -47,6 +47,10 @@ if ($dumpparser && $wiktparser) {
 
 	$wiktparser->set_lang_code( $lang->{code} );
 
+	if ($opts{x}) {
+		$dumpparser->set_maxpages( $opts{x} );
+	}
+
 	$dumpparser->parse( \$xline );
 
 	$wiktparser->show_headword_log;
@@ -65,6 +69,6 @@ sub title_handler {
 }
 
 sub text_handler {
-	$wiktparser->parse( $namespace, \$pagecounter, $title, \$xline, $lang->{pattern}, \$tried_to_parse, \$parsed_ok, \%gendercount );
+	$wiktparser->parse( $namespace, $title, \$xline, $lang->{pattern}, \$tried_to_parse, \$parsed_ok, \%gendercount );
 }
 
