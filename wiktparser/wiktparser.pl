@@ -32,11 +32,8 @@ if ($lang) {
 
 my $namespace;
 my $title;
-my $pagecounter = 0;
-my $xline;
-my $tried_to_parse = 0;
-my $parsed_ok = 0;
-my %gendercount;
+
+my $line;						# TODO this is used as though it's a member of both parsers
 
 my $dumpparser = new Wiki::DumpParser;
 my $wiktparser = new Wiki::WiktParser;
@@ -45,18 +42,17 @@ if ($dumpparser && $wiktparser) {
 	$dumpparser->set_title_handler( \&title_handler );
 	$dumpparser->set_text_handler( \&text_handler );
 
-	$wiktparser->set_lang_code( $lang->{code} );
+	$wiktparser->set_lang( $lang->{code}, $lang->{pattern} );
 
 	if ($opts{x}) {
 		$dumpparser->set_maxpages( $opts{x} );
 	}
 
-	$dumpparser->parse( \$xline );
+	$dumpparser->parse( \$line );
 
+	$dumpparser->show_page_counts;
 	$wiktparser->show_headword_log;
 }
-
-print STDERR "** wiktparser2.pl done\n";
 
 exit;
 
@@ -69,6 +65,6 @@ sub title_handler {
 }
 
 sub text_handler {
-	$wiktparser->parse( $namespace, $title, \$xline, $lang->{pattern}, \$tried_to_parse, \$parsed_ok, \%gendercount );
+	$wiktparser->parse( $namespace, $title, \$line );
 }
 

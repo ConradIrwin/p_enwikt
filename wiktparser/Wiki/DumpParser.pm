@@ -195,11 +195,22 @@ sub parse {
 		if ($ns eq '') {
 			if ($self->{_maxpages} != 0 && $self->{_pagecount} >= $self->{_maxpages}) {
 				print STDERR "** max number of pages parsed\n";
-				print "</wiktionary>\n";
 				return;
 			}
 		}
 	} # Next line of dump file
+}
+
+sub show_page_counts {
+	my $self = shift;
+
+	print STDERR 'Total pages scanned: ', $self->{_pagecount}, "\n";
+
+	foreach my $ns (sort {$self->{_namespaces}->{$a}->{key} <=> $self->{_namespaces}->{$b}->{key}} keys %{$self->{_namespaces}}) {
+		if ($self->{_namespaces}->{$ns}->{count}) {
+			print STDERR $ns ? $ns : 'Default namespace', ' pages scanned: ', $self->{_namespaces}->{$ns}->{count}, "\n";
+		}
+	}
 }
 
 1;

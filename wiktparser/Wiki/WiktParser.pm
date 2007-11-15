@@ -49,6 +49,11 @@ my $headword_matchers = [
 sub new {
 	my $class = shift;
 	my $self = bless {}, $class;
+	$self->{_language_code} = '';
+	$self->{_language_pattern} = '';
+	$self->{_headword_parse_tried} = 0;
+	$self->{_headword_parse_ok} = 0;
+	$self->{_headword_genders} = {};
 	return $self;
 }
 
@@ -68,14 +73,16 @@ sub set_template_handler {
 # This can be called only once
 #
 
-sub set_lang_code {
-	my ($self, $code) = @_;
+sub set_lang {
+	my ($self, $code, $pattern) = @_;
 
-	$self->{lang_code} = $code;
+	$self->{_language_code} = $code;
 
 	for my $hm (@$headword_matchers) {
 		$hm->[0] =~ s/LANG_CODE/$code/g;
 	}
+
+	$self->{_language_pattern} = $pattern;
 }
 
 #
@@ -84,15 +91,7 @@ sub set_lang_code {
 
 sub parse {
 	my $self = shift;
-	my (
-		$ns,
-	   	$title,
-	   	$xline,
-	   	$lang_pat,
-	   	$tried_to_parse,
-	   	$parsed_ok,
-	   	$gendercount
-	) = @_;
+	my ($ns, $title, $xline) = @_;
 
 	if ($ns eq '') {
 		# Custom article handler
@@ -101,13 +100,7 @@ sub parse {
 
 		# Built-in article parser method
 		} else {
-			$self->parse_article(
-				$title,
-				$xline,
-				$lang_pat,
-				$tried_to_parse,
-				$parsed_ok,
-				$gendercount);
+			$self->parse_article( $title, $xline );
 		}
 	# TODO localize by using namespace numbers
 	} elsif ($ns eq 'Template') {
@@ -119,13 +112,7 @@ sub parse {
 
 sub parse_article {
 	my $self = shift;
-	my (
-	   	$title,
-	   	$xline,
-	   	$lang_pat,
-	   	$tried_to_parse,
-	   	$parsed_ok,
-	   	$gendercount) = @_;
+	my ( $title, $xline) = @_;
 
 	my $page;					# a page is an article
 
@@ -200,7 +187,7 @@ sub parse_article {
 
 	# Each language in this page
 	foreach my $lang (@{$p->{sections}}) {
-		if ($lang->{heading} =~ /$lang_pat/o) {
+		if ($lang->{heading} =~ /$self->{_language_pattern}/o) {
 
 			my $etymcount = 0;
 			my $nouncount = 0;
@@ -275,16 +262,16 @@ sub parse_article {
 
 			# Parse the headword/inflection line for gender and number
 
-			++$$tried_to_parse;
+			++$self->{_headword_parse_tried};
 
 			if ((my $hw = $self->parse_headword($w, $l))) {
 				$g = $hw->{g};
 				$n = $hw->{n};
-				++$$parsed_ok;
+				++$self->{_headword_parse_ok};
 			}
 
 			if ($g) {
-				++$gendercount->{$g};
+				++$self->{_headword_genders}->{$g};
 			}
 		}
 		# END parse headword/inflection line
@@ -384,6 +371,10 @@ sub parse_headword {
 sub show_headword_log() {
 	my $self = shift;
 
+	print 'Tried to parse ', $self->{_headword_parse_tried}, ' headword sections, ', $self->{_headword_parse_ok}, " succeeded\n";
+	for my $g (keys %{$self->{_headword_genders}}) {
+		print "Gender '$g': ", $self->{_headword_genders}->{$g}, "\n";
+	}
 	for (my $i = 0; $i < scalar @$headword_matchers; ++$i) {
 		print $headword_matchers->[$i]->[2], ' : ', $headword_matchers->[$i]->[0], "\n";
 	}

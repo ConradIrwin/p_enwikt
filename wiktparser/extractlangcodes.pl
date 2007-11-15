@@ -11,10 +11,6 @@ my $title;
 
 my $line;						# TODO this is used as though it's a member of both parsers
 
-my $tried_to_parse = 0;			# TODO should be part of Wiki::WiktParser
-my $parsed_ok = 0;				# TODO should be part of Wiki::WiktParser
-my %gendercount;				# TODO should be part of Wiki::WiktParser
-
 my %langnamestocodes;
 my $langcodetemplate_counter;
 my $langcodetemplate2_counter;
@@ -49,14 +45,7 @@ sub title_handler {
 }
 
 sub text_handler {
-	$wiktparser->parse(
-		$namespace,
-		$title,
-		\$line,
-		undef,
-		\$tried_to_parse,
-		\$parsed_ok,
-		\%gendercount );
+	$wiktparser->parse( $namespace, $title, \$line );
 }
 
 sub template_handler {
