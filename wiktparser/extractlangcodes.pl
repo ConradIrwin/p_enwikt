@@ -11,11 +11,11 @@ use WiktParser::Source;
 my $namespace;
 my $title;
 
-my %langnamestocodes;			# TODO change to map to handle duplicates better
+my %langnamestocodes;			# TODO change to handle duplicates better
 my $langcodetemplate_counter;
 my $langcodetemplate2_counter;
 
-my %langcodestonames;			# TODO change to map to handle duplicates better
+my %langcodestonames;			# TODO change to handle duplicates better
 my $interwiktionary_counter;
 my $ethnologue_counter;
 
@@ -29,17 +29,17 @@ if ($dumpparser && $wiktparser) {
 	$wiktparser->set_template_handler( \&template_handler );
 	$wiktparser->set_article_handler( \&article_handler );
 
-	$dumpparser->set_maxpages(2000);
+	#$dumpparser->set_maxpages(20000);
 	$dumpparser->parse();
 }
 
 print "Names to codes\n";
 
 foreach my $n (sort keys %langnamestocodes) {
-	print $n, ' -> ', join(', ', @{$langnamestocodes{$n}}), "\n";
+	print $n, ' -> ', join(', ', keys %{$langnamestocodes{$n}}), "\n";
 
-	foreach my $c (@{$langnamestocodes{$n}}) {
-		print '  ', $c, ' -> ', $langcodestonames{$c} ? join(', ', @{$langcodestonames{$c}}) : '-', "\n";
+	foreach my $c (keys %{$langnamestocodes{$n}}) {
+		print '  ', $c, ' -> ', $langcodestonames{$c} ? join(', ', keys %{$langcodestonames{$c}}) : '-', "\n";
 	}
 }
 
@@ -48,10 +48,10 @@ print "\n";
 print "Codes to names\n";
 
 foreach my $c (sort keys %langcodestonames) {
-	print $c, ' -> ', join(', ', @{$langcodestonames{$c}}), "\n";
+	print $c, ' -> ', join(', ', keys %{$langcodestonames{$c}}), "\n";
 
-	foreach my $n (@{$langcodestonames{$c}}) {
-		print '  ', $n, ' -> ', $langnamestocodes{$n} ? join(', ', @{$langnamestocodes{$n}}) : '-', "\n";
+	foreach my $n (keys %{$langcodestonames{$c}}) {
+		print '  ', $n, ' -> ', $langnamestocodes{$n} ? join(', ', keys %{$langnamestocodes{$n}}) : '-', "\n";
 	}
 }
 
@@ -81,7 +81,8 @@ sub template_handler {
 			}
 
 			if ($langname ne '') {
-				push @{$langnamestocodes{$langname}}, $langcode;
+				$langnamestocodes{$langname}->{$langcode}++;
+				$langcodestonames{$langcode}->{$langname}++;
 				if ($which eq '') {
 					++$langcodetemplate_counter;
 					print STDERR "** t1 $langcodetemplate_counter: $langname -> $langcode\n";
@@ -106,13 +107,15 @@ sub article_handler {
 		if ($tline =~ /^{{ethnologue\|code=([a-z][a-z][a-z]?)}}\s*/) {
 			my $langcode = $1;
 
-			push @{$langcodestonames{$langcode}}, $title;
+			$langcodestonames{$langcode}->{$title}++;
+			$langnamestocodes{$title}->{$langcode}++;
 			++$ethnologue_counter;
 			print STDERR "** eth $ethnologue_counter: $langcode -> $title\n";
 		} elsif ($tline =~ /^{{interwiktionary\|code=([a-z][a-z][a-z]?)}}\s*/) {
 			my $langcode = $1;
 
-			push @{$langcodestonames{$langcode}}, $title;
+			$langcodestonames{$langcode}->{$title}++;
+			$langnamestocodes{$title}->{$langcode}++;
 			++$interwiktionary_counter;
 			print STDERR "** iw  $interwiktionary_counter: $langcode -> $title\n";
 		}
