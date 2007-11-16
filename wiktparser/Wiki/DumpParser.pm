@@ -3,6 +3,8 @@ package Wiki::DumpParser;
 
 use strict;
 
+require WiktParser::Source;
+
 # Format of MediaWiki dump file
 # mediawiki: xmlns, xmlns:xsi, xsi:SchemaLocation, version, xml:lang
 #  siteinfo
@@ -83,24 +85,23 @@ sub get_pagecount {
 
 sub parse {
 	my $self = shift;
-	my $xline = shift;
 
 	# Skip stuff before the <namespaces> section
 
-	while ($$xline = <STDIN>) {
-		last if ($$xline =~ /<namespaces>/);
+	while (WiktParser::Source::nextline()) {
+		last if ($WiktParser::Source::line =~ /<namespaces>/);
 	}
 
 	# We read everything and never found <namespaces>
-	if ($$xline !~ /<namespaces>/) {
+	if ($WiktParser::Source::line !~ /<namespaces>/) {
 		print STDERR "** namespaces section not found\n";
 		exit;
 	}
 
 	# Handle <namespaces>
 
-	while ($$xline = <STDIN>) {
-		if ($$xline =~ /<namespace key="(-?\d+)"(.*)>/) {
+	while (WiktParser::Source::nextline()) {
+		if ($WiktParser::Source::line =~ /<namespace key="(-?\d+)"(.*)>/) {
 			my ($key, $rest) = ($1, $2);
 			if ($rest =~ />(.*)<\/namespace/) {
 				$self->{_namespaces}->{$1} = { 'key' => $key, 'count' => 0, 'name' => $1 };
@@ -113,7 +114,7 @@ sub parse {
 	}
 
 	# Premature EOF
-	if ($$xline !~ /<\/namespaces>/) {
+	if ($WiktParser::Source::line !~ /<\/namespaces>/) {
 		print STDERR "** end of namespaces section not found\n";
 		exit;
 	}
@@ -136,15 +137,15 @@ sub parse {
 
 		# Skip anything before next <title>
 		#  Currently </text> </revision> </page> <page>
-		while ($$xline = <STDIN>) {
-			if ($$xline =~ /<title>(.*)<\/title>/) {
+		while (WiktParser::Source::nextline()) {
+			if ($WiktParser::Source::line =~ /<title>(.*)<\/title>/) {
 				$title = $1;
 				last;
 			}
 		}
 
 		# EOF
-		if ($$xline !~ /<title>.*<\/title>/) {
+		if ($WiktParser::Source::line !~ /<title>.*<\/title>/) {
 			print STDERR "** no more pages\n";
 			return;
 		}
@@ -163,17 +164,17 @@ sub parse {
 		}
 
 		# Skip to start of wikitext
-		while ($$xline = <STDIN>) {
-			last if ($$xline =~ /<text xml:space="preserve">/);
+		while (WiktParser::Source::nextline()) {
+			last if ($WiktParser::Source::line =~ /<text xml:space="preserve">/);
 		}
 
 		# If we ever had an article record without a text record
-		if ($$xline =~ /<title>.*<\/title>/) {
+		if ($WiktParser::Source::line =~ /<title>.*<\/title>/) {
 			print STDERR "** $title has no text field\n";
 			exit;
 		}
 
-		if ($$xline !~ /<text xml:space="preserve">/) {
+		if ($WiktParser::Source::line !~ /<text xml:space="preserve">/) {
 			print STDERR "** unexpected end of file while looking for $title's text field\n";
 			exit;
 		}
@@ -183,10 +184,10 @@ sub parse {
 		}
 
 		# Skip remainder of page
-		while ($$xline = <STDIN>) {
-			last if ($$xline =~ /<\/page>/);
+		while (WiktParser::Source::nextline()) {
+			last if ($WiktParser::Source::line =~ /<\/page>/);
 		}
-		if ($$xline !~ /<\/page>/) {
+		if ($WiktParser::Source::line !~ /<\/page>/) {
 			print STDERR "** unexpected end of file in $title\n";
 			exit;
 		}

@@ -9,6 +9,8 @@ use Wiki::DumpParser;
 use Wiki::WiktLang;
 use Wiki::WiktParser;
 
+require WiktParser::Source;
+
 my %opts;
 my $lang;
 
@@ -33,8 +35,6 @@ if ($lang) {
 my $namespace;
 my $title;
 
-my $line;						# TODO this is used as though it's a member of both parsers
-
 my $dumpparser = new Wiki::DumpParser;
 my $wiktparser = new Wiki::WiktParser;
 
@@ -48,7 +48,7 @@ if ($dumpparser && $wiktparser) {
 		$dumpparser->set_maxpages( $opts{x} );
 	}
 
-	$dumpparser->parse( \$line );
+	$dumpparser->parse();
 
 	$dumpparser->show_page_counts;
 	$wiktparser->show_headword_log;
@@ -65,6 +65,6 @@ sub title_handler {
 }
 
 sub text_handler {
-	$wiktparser->parse( $namespace, $title, \$line );
+	$wiktparser->parse( $namespace, $title );
 }
 

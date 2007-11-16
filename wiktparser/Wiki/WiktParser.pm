@@ -3,6 +3,8 @@ package Wiki::WiktParser;
 
 use strict;
 
+require WiktParser::Source;
+
 my @scope;
 
 my $headword_matchers = [
@@ -91,28 +93,28 @@ sub set_lang {
 
 sub parse {
 	my $self = shift;
-	my ($ns, $title, $xline) = @_;
+	my ($ns, $title) = @_;
 
 	if ($ns eq '') {
 		# Custom article handler
 		if ($self->{article_handler}) {
-			&{$self->{article_handler}}($xline);
+			&{$self->{article_handler}}();
 
 		# Built-in article parser method
 		} else {
-			$self->parse_article( $title, $xline );
+			$self->parse_article( $title );
 		}
 	# TODO localize by using namespace numbers
 	} elsif ($ns eq 'Template') {
 		if ($self->{template_handler}) {
-			&{$self->{template_handler}}($xline);
+			&{$self->{template_handler}}();
 		}
 	}
 }
 
 sub parse_article {
 	my $self = shift;
-	my ( $title, $xline) = @_;
+	my $title = shift;
 
 	my $page;					# a page is an article
 
@@ -141,7 +143,7 @@ sub parse_article {
 
 	# Each line of page wikitext
 	while (1) {
-		$$xline =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
+		$WiktParser::Source::line =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
 		my ($tline, $post) = ($1, $2);
 
 		# TODO shouldn't this test be at the bottom of the loop?
@@ -174,7 +176,7 @@ sub parse_article {
 			push @{$section->{lines}}, $tline;
 		}
 
-		last unless ($$xline = <STDIN>);
+		last unless (WiktParser::Source::nextline());
 	} # while (1)
 
 	# Process raw section tree into a more structured entry

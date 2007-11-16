@@ -6,16 +6,16 @@ use strict;
 use Wiki::DumpParser;
 use Wiki::WiktParser;
 
+use WiktParser::Source;
+
 my $namespace;
 my $title;
 
-my $line;						# TODO this is used as though it's a member of both parsers
-
-my %langnamestocodes;
+my %langnamestocodes;			# TODO change to map to handle duplicates better
 my $langcodetemplate_counter;
 my $langcodetemplate2_counter;
 
-my %langcodestonames;
+my %langcodestonames;			# TODO change to map to handle duplicates better
 my $interwiktionary_counter;
 my $ethnologue_counter;
 
@@ -29,10 +29,31 @@ if ($dumpparser && $wiktparser) {
 	$wiktparser->set_template_handler( \&template_handler );
 	$wiktparser->set_article_handler( \&article_handler );
 
-	$dumpparser->parse( \$line );
+	$dumpparser->set_maxpages(2000);
+	$dumpparser->parse();
 }
 
-print STDERR "** extractlangcodes.pl done\n";
+print "Names to codes\n";
+
+foreach my $n (sort keys %langnamestocodes) {
+	print $n, ' -> ', join(', ', @{$langnamestocodes{$n}}), "\n";
+
+	foreach my $c (@{$langnamestocodes{$n}}) {
+		print '  ', $c, ' -> ', $langcodestonames{$c} ? join(', ', @{$langcodestonames{$c}}) : '-', "\n";
+	}
+}
+
+print "\n";
+
+print "Codes to names\n";
+
+foreach my $c (sort keys %langcodestonames) {
+	print $c, ' -> ', join(', ', @{$langcodestonames{$c}}), "\n";
+
+	foreach my $n (@{$langcodestonames{$c}}) {
+		print '  ', $n, ' -> ', $langnamestocodes{$n} ? join(', ', @{$langnamestocodes{$n}}) : '-', "\n";
+	}
+}
 
 exit;
 
@@ -45,16 +66,15 @@ sub title_handler {
 }
 
 sub text_handler {
-	$wiktparser->parse( $namespace, $title, \$line );
+	$wiktparser->parse( $namespace, $title );
 }
 
 sub template_handler {
-	my $line = shift;
 
 	if ($title =~ /^(lang:)?([a-z][a-z][a-z]?)$/) {
 		my ($which, $langcode) = ($1, $2);
 
-		if ($$line =~ /<text xml:space="preserve">(.*?)&lt;noinclude&gt;\[\[Category:Language templates|$title]]&lt;\/noinclude&gt;<\/text>/) {
+		if ($WiktParser::Source::line =~ /<text xml:space="preserve">(.*?)&lt;noinclude&gt;\[\[Category:Language templates|$title]]&lt;\/noinclude&gt;<\/text>/) {
 			my $langname = $1;
 			if ($langname =~ /^\[\[(?:.*\|)?(.*?)]]$/) {
 				$langname = $1;
@@ -75,11 +95,10 @@ sub template_handler {
 }
 
 sub article_handler {
-	my $line = shift;
 
 	# Each line of page wikitext
 	while (1) {
-		$$line =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
+		$WiktParser::Source::line =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
 		my ($tline, $post) = ($1, $2);
 
 		last if ($post ne '');
@@ -98,7 +117,7 @@ sub article_handler {
 			print STDERR "** iw  $interwiktionary_counter: $langcode -> $title\n";
 		}
 
-		last unless ($$line = <STDIN>);
+		last unless (WiktParser::Source::nextline());
 	}
 }
 
