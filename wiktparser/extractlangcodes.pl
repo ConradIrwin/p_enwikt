@@ -11,11 +11,11 @@ use WiktParser::Source;
 my $namespace;
 my $title;
 
-my %langnamestocodes;			# TODO change to handle duplicates better
+my %langnamestocodes;
 my $langcodetemplate_counter;
 my $langcodetemplate2_counter;
 
-my %langcodestonames;			# TODO change to handle duplicates better
+my %langcodestonames;
 my $interwiktionary_counter;
 my $ethnologue_counter;
 
@@ -29,30 +29,82 @@ if ($dumpparser && $wiktparser) {
 	$wiktparser->set_template_handler( \&template_handler );
 	$wiktparser->set_article_handler( \&article_handler );
 
-	#$dumpparser->set_maxpages(20000);
+	#$dumpparser->set_maxpages(23750);
 	$dumpparser->parse();
 }
 
 print "Names to codes\n";
+print "--------------\n";
+
+my %nametosyns;
+my @namesets;
 
 foreach my $n (sort keys %langnamestocodes) {
-	print $n, ' -> ', join(', ', keys %{$langnamestocodes{$n}}), "\n";
 
-	foreach my $c (keys %{$langnamestocodes{$n}}) {
-		print '  ', $c, ' -> ', $langcodestonames{$c} ? join(', ', keys %{$langcodestonames{$c}}) : '-', "\n";
+	if (exists $nametosyns{$n}) {
+		print "** $n already done\n";
+	} else {
+		my %syns;
+		foreach my $c (keys %{$langnamestocodes{$n}}) {
+			foreach my $n2 (keys %{$langcodestonames{$c}}) {
+				$syns{$n2}++;
+			}
+		}
+		print $n, ' -> ', join(', ', keys %syns), ' -> ', join(', ', keys %{$langnamestocodes{$n}}), "\n";
+		foreach my $syn (%syns) {
+			$nametosyns{$syn} = \%syns;
+		}
+		push @namesets, \%syns;
 	}
 }
 
 print "\n";
 
 print "Codes to names\n";
+print "--------------\n";
+
+my %codetosyns;
+my @codesets;
 
 foreach my $c (sort keys %langcodestonames) {
-	print $c, ' -> ', join(', ', keys %{$langcodestonames{$c}}), "\n";
 
-	foreach my $n (keys %{$langcodestonames{$c}}) {
-		print '  ', $n, ' -> ', $langnamestocodes{$n} ? join(', ', keys %{$langnamestocodes{$n}}) : '-', "\n";
+	if (exists $codetosyns{$c}) {
+		print "** $c already done\n";
+	} else {
+		my %syns;
+		foreach my $n (keys %{$langcodestonames{$c}}) {
+			foreach my $c2 (keys %{$langnamestocodes{$n}}) {
+				$syns{$c2}++;
+			}
+		}
+		print $c, ' -> ', join(', ', keys %syns), ' -> ', join(', ', keys %{$langcodestonames{$c}}), "\n";
+		foreach my $syn (%syns) {
+			$codetosyns{$syn} = \%syns;
+		}
+		push @codesets, \%syns;
 	}
+}
+
+print "\n";
+
+print "Names to codes 2\n";
+print "----------------\n";
+
+foreach (@namesets) {
+	my @k1 = keys %{$_};
+	my @k2 = keys %{$langnamestocodes{$k1[0]}};
+	print join(', ', @k1), "\t", join(', ', keys %{$codetosyns{$k2[0]}}), "\n";
+}
+
+print "\n";
+
+print "Codes to names 2\n";
+print "----------------\n";
+
+foreach (@codesets) {
+	my @k1 = keys %{$_};
+	my @k2 = keys %{$langcodestonames{$k1[0]}};
+	print join(', ', @k1), "\t", join(', ', keys %{$nametosyns{$k2[0]}}), "\n";
 }
 
 exit;

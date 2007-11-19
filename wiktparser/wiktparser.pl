@@ -26,9 +26,7 @@ if ($opts{l} && $opts{L}) {
 	die "Use either -l for language code or -L for language name\n";
 }
 
-if ($lang) {
-	print "code:$lang->{code} pat:$lang->{pattern}\n";
-} else {
+unless ($lang) {
 	die "Couldn't find language\n";
 }
 

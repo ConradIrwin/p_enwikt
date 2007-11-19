@@ -112,17 +112,54 @@ sub parse {
 	}
 }
 
+#
+# This is designed around the English Wiktionary format
+#
+# It expects structured nested headings
+# It expects literal headings, not templated headings
+#
+# TODO separate various levels of functionality
+#
+
 sub parse_article {
 	my $self = shift;
 	my $title = shift;
 
-	my $page;					# a page is an article
+	# Build a tree based on the heading levels
+	my $pagetree = $self->parse_heading_structure($title);
 
-	$page = {};
-	$page->{raw} = {};			# level 1 heading, root for tree of headings
-	$page->{cooked} = {};		# TODO not yet used
+	# Process raw section tree into a more structured entry
+	my $p = $pagetree->{raw}->{sections}[0];
+	my $w = $p->{heading};
 
-	@scope[0] = $page->{raw};
+	# TODO other POS
+	my @nouns;
+
+	# Collect all the noun sections we want to parse
+
+	# Each language in this page
+	foreach my $lang (@{$p->{sections}}) {
+		$self->handle_language( \@nouns, $w, $lang );
+	}
+
+	$self->handle_article_end( \@nouns, $w );
+}
+
+#
+# Build a tree based on the heading levels
+#
+
+sub parse_heading_structure {
+	my $self = shift;
+	my $title = shift;
+
+	my $pagetree;				# a page is an article
+
+	$pagetree = {};
+	$pagetree->{raw} = {};		# level 1 heading, root for tree of headings
+	$pagetree->{cooked} = {};	# TODO not yet used
+
+	@scope[0] = $pagetree->{raw};
 
 	my $tline;					# line of wikitext to be parsed
 
@@ -131,7 +168,7 @@ sub parse_article {
 
 	my $entry;					# each language heading starts a new entry
 
-	$page->{title} = $title;
+	$pagetree->{title} = $title;
 
 	$section = {};
 	$section->{level} = 1;
@@ -141,8 +178,11 @@ sub parse_article {
 
 	$prevsection = $self->appendsection($section);
 
+	# Parse the heading structure as used on the English Wiktionary
+
 	# Each line of page wikitext
 	while (1) {
+		# TODO try to separate dump file stuff from wiktionary stuff
 		$WiktParser::Source::line =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
 		my ($tline, $post) = ($1, $2);
 
@@ -163,7 +203,7 @@ sub parse_article {
 			$section->{lines} = [];
 			$section->{sections} = [];
 
-			# Section more than 1 level deeper than its parent?
+			# Flag sections more than 1 level deeper than its parent
 			if ($prevsection->{level} - $level < -1) {
 				$section->{toodeep} = 1;
 			}
@@ -179,63 +219,67 @@ sub parse_article {
 		last unless (WiktParser::Source::nextline());
 	} # while (1)
 
-	# Process raw section tree into a more structured entry
-	my $p = $page->{raw}->{sections}[0];
-	my $w = $p->{heading};
+	return $pagetree;
+}
 
-	my @nouns;
+sub handle_language {
+	my $self = shift;
 
-	# Collect all the noun sections we want to parse
+	# TODO turn into flexible per-language callback
+	my ($nouns, $w, $lang) = @_;
 
-	# Each language in this page
-	foreach my $lang (@{$p->{sections}}) {
-		if ($lang->{heading} =~ /$self->{_language_pattern}/o) {
+	if ($lang->{heading} =~ /$self->{_language_pattern}/o) {
 
-			my $etymcount = 0;
-			my $nouncount = 0;
+		my $etymcount = 0;
+		my $nouncount = 0;
 
-			# Each l3 heading: we care about Noun and Etymology
-			foreach my $l3 (@{$lang->{sections}}) {
+		# Each l3 heading: we care about Noun and Etymology
+		foreach my $l3 (@{$lang->{sections}}) {
 
-				# Noun, possibly numbered
-				if ($l3->{heading} =~ /^Noun(?:\s+\d+)?$/) {
-					$l3->{etymcount} = 1;
-					$l3->{nouncount} = ++$nouncount;
-					push @nouns, $l3;
-				}
-				# Unsupported variations on Noun
-				elsif ($l3->{heading} =~ /\b[Nn]oun/) {
-					print STDERR "** $w ** $l3->{heading}\n";
-				}
+			# Noun, possibly numbered
+			# TODO per-POS filter
+			if ($l3->{heading} =~ /^Noun(?:\s+\d+)?$/) {
+				$l3->{etymcount} = 1;
+				$l3->{nouncount} = ++$nouncount;
+				push @{$nouns}, $l3;
+			}
+			# Unsupported variations on Noun
+			elsif ($l3->{heading} =~ /\b[Nn]oun/) {
+				print STDERR "** $w ** $l3->{heading}\n";
+			}
 
-				# Etymology, supposed to be numbered
-				elsif ($l3->{heading} =~ /^Etymology(?:\s+\d+)?$/) {
+			# Etymology, supposed to be numbered
+			elsif ($l3->{heading} =~ /^Etymology(?:\s+\d+)?$/) {
 
-					my $nouncount = 0;
+				my $nouncount = 0;
 
-					# Each l4 subheading of an l3 Etymology section
-					foreach my $l4 (@{$l3->{sections}}) {
+				# Each l4 subheading of an l3 Etymology section
+				foreach my $l4 (@{$l3->{sections}}) {
 
-						# Noun, possibly numbered
-						if ($l4->{heading} =~ /^Noun(?: \d+)?$/) {
-							$l4->{etymcount} = ++$etymcount;
-							$l4->{nouncount} = ++$nouncount;
-							push @nouns, $l4;
-						}
-						# Unsupported variations on Noun
-						elsif ($l3->{heading} =~ /\b[Nn]oun/) {
-							print STDERR "** $w ** $l4->{heading}\n";
-						}
+					# Noun, possibly numbered
+					if ($l4->{heading} =~ /^Noun(?: \d+)?$/) {
+						$l4->{etymcount} = ++$etymcount;
+						$l4->{nouncount} = ++$nouncount;
+						push @{$nouns}, $l4;
+					}
+					# Unsupported variations on Noun
+					elsif ($l3->{heading} =~ /\b[Nn]oun/) {
+						print STDERR "** $w ** $l4->{heading}\n";
 					}
 				}
 			}
-			last;	# Skip the following language entries
 		}
+		last;	# Skip the following language entries
 	}
+}
+
+sub handle_article_end {
+	my $self = shift;
+	my ($nouns, $w) = @_;
 
 	# Parse all the noun sections we collected
 	my $t;
-	foreach my $ns (@nouns) {
+	foreach my $ns (@{$nouns}) {
 		# START process noun body
 		my ($ln, $l);
 		for ($ln = 0; $ln < scalar @{$ns->{lines}}; ++$ln) {
