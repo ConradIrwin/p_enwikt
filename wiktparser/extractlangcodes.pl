@@ -29,7 +29,7 @@ if ($dumpparser && $wiktparser) {
 	$wiktparser->set_template_handler( \&template_handler );
 	$wiktparser->set_article_handler( \&article_handler );
 
-	#$dumpparser->set_maxpages(23750);
+	$dumpparser->set_maxpages(2375);
 	$dumpparser->parse();
 }
 
