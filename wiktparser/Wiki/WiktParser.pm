@@ -164,19 +164,19 @@ sub parse_heading_structure {
 		$WiktParser::Source::line =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
 		my ($tline, $post) = ($1, $2);
 
-		# TODO shouldn't this test be at the bottom of the loop?
-		last if ($post ne '');
-
 		# Heading
 		if ($tline =~ /^(==+)\s*([^=]+?)\s*(==+)\s*$/) {
 			$section = {};
 			$section->{unbalanced} = (length($1) != length($3));
+
 			my $level = length($1) < length($3) ? length($1) : length($3);
 			$section->{level} = $level;
+
 			my $headinglabel = $2;
 			if ($headinglabel =~ /^\[\[\s*(?:.*\|)?(.*?)\s*\]\]$/) {
 				$headinglabel = $1;
 			}
+
 			$section->{heading} = $headinglabel;
 			$section->{lines} = [];
 			$section->{sections} = [];
@@ -187,12 +187,15 @@ sub parse_heading_structure {
 			}
 
 			$prevsection = $self->appendsection($section);
-		} # Heading
+		}
 		
 		# Not heading, just plain lines
 		else {
 			push @{$section->{lines}}, $tline;
 		}
+
+		# TODO shouldn't this test be at the bottom of the loop?
+		last if ($post ne '');
 
 		last unless (WiktParser::Source::nextline());
 	} # while (1)
