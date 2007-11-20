@@ -22,7 +22,7 @@ my $ethnologue_counter;
 my $dumpparser = new Wiki::DumpParser;
 my $wiktparser = new Wiki::WiktParser;
 
-my $source = new WiktParser::Source;
+my $source = new WiktParser::Source::Stdin;
 
 if ($dumpparser && $wiktparser && $source) {
 	$dumpparser->set_source( $source );

@@ -14,7 +14,11 @@ require WiktParser::Source;
 my %opts;
 my $lang;
 
-getopt('lLx', \%opts);
+getopt('slLx', \%opts);
+
+if ($opts{s} ne 'dump' && $opts{s} ne 'random') {
+	die "Use -s with 'dump' to parse an XML dump file from stdin or with 'random' to parse random articles from the Internet\n";
+}
 
 if ($opts{l} && $opts{L}) {
 	die "Use either -l for language code or -L for language name\n";
@@ -80,7 +84,7 @@ my $headword_genders = {};
 my $dumpparser = new Wiki::DumpParser;
 my $wiktparser = new Wiki::WiktParser;
 
-my $source = new WiktParser::Source;
+my $source = new WiktParser::Source::Stdin;
 
 if ($dumpparser && $wiktparser && $source) {
 	$dumpparser->set_source( $source );
