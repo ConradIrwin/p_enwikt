@@ -81,30 +81,87 @@ my $headword_parse_tried = 0;
 my $headword_parse_ok = 0;
 my $headword_genders = {};
 
-my $dumpparser = new Wiki::DumpParser;
 my $wiktparser = new Wiki::WiktParser;
 
-my $source = new WiktParser::Source::Stdin;
+my $source;
 
-if ($dumpparser && $wiktparser && $source) {
-	$dumpparser->set_source( $source );
-	$dumpparser->set_title_handler( \&title_handler );
-	$dumpparser->set_text_handler( \&text_handler );
-
-	if ($opts{x}) {
-		$dumpparser->set_maxpages( $opts{x} );
-	}
-
+if ($wiktparser) {
 	set_lang( $lang );
 
-	$wiktparser->set_source( $source );
 	$wiktparser->set_article_start_handler( \&article_start_handler );
 	$wiktparser->set_langsection_handler( \&langsection_handler );
 	$wiktparser->set_article_end_handler( \&article_end_handler );
 
-	$dumpparser->parse();
+	if ($opts{s} eq 'dump') {
+		$source = new WiktParser::Source::Stdin;
 
-	$dumpparser->show_page_counts;
+		$wiktparser->set_source( $source );
+
+		my $dumpparser = new Wiki::DumpParser;
+
+		$dumpparser->set_source( $source );
+		$dumpparser->set_title_handler( \&title_handler );
+		$dumpparser->set_text_handler( \&text_handler );
+
+		if ($opts{x}) {
+			$dumpparser->set_maxpages( $opts{x} );
+		}
+
+		$dumpparser->parse();
+
+		$dumpparser->show_page_counts;
+	}
+
+	elsif ($opts{s} eq 'random') {
+		use LWP::UserAgent;
+		use URI::Escape;
+		use Encode qw(decode_utf8 encode_utf8);
+
+		my $wikilang = Wiki::WiktLang::bycode('en');
+
+		my $ua = LWP::UserAgent->new;
+
+		for (my $n = 1; $n <= $opts{x}; ++$n) {
+			# Create a request
+			my $req = HTTP::Request->new(HEAD => "http://$wikilang->{code}.wiktionary.org/wiki/Special:Random");
+
+			my $loc;
+
+			for (my $n = 1; $n < 10; ++$n) {
+				# Pass request to the user agent and get a response back
+				my $res = $ua->simple_request($req);
+
+				# Check the outcome of the response
+				if ($res->is_redirect) {
+					$loc = $res->header('Location');
+					$req->uri( $loc );
+				} else {
+					last;
+				}
+			}
+
+			if ($loc =~ /^http:\/\/[a-z]+\.wiktionary\.org\/wiki\/(.*)$/) {
+				my $etitle = $1;
+				my $title = uri_unescape($etitle);
+				my $req2 = HTTP::Request->new(GET => "http://$wikilang->{code}.wiktionary.org/w/index.php?title=$etitle&action=raw");
+				print STDERR "$n ... $title ...\n";
+
+				my $res2 = $ua->request($req2);
+
+				if ($res2->is_success) {
+					$source = new WiktParser::Source::String($res2->content);
+
+					$wiktparser->set_source( $source );
+
+					$wiktparser->parse('', $title);
+				} else {
+					print STDERR "** GET failed\n";
+				}
+			} else {
+				print STDERR "** couldn't get article name from URI: ", $loc, "\n";
+			}
+		}
+	}
 
 	show_headword_log();
 }

@@ -13,6 +13,7 @@ my @langs = (
 	{ 'code' => 'da',	'pattern' => '^Danish$',			'genders' => 'cn' },
 	{ 'code' => 'de',	'pattern' => '^German$',			'genders' => 'mfn' },
 	{ 'code' => 'el',	'pattern' => '^Greek$',				'genders' => 'mfn' },
+	{ 'code' => 'en',	'pattern' => '^English$',			'genders' => undef },
 	{ 'code' => 'eo',	'pattern' => '^Esperanto$',			'genders' => undef },
 	{ 'code' => 'es',	'pattern' => '^Spanish$',			'genders' => 'mf' },
 	{ 'code' => 'et',	'pattern' => '^Estonian$',			'genders' => undef },
