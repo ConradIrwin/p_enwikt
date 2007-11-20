@@ -15,7 +15,14 @@ my @scope;
 sub new {
 	my $class = shift;
 	my $self = bless {}, $class;
+	$self->{src} = undef;
 	return $self;
+}
+
+sub set_source {
+	my $self = shift;
+
+	$self->{src} = shift;
 }
 
 #
@@ -161,7 +168,7 @@ sub parse_heading_structure {
 	# Each line of page wikitext
 	while (1) {
 		# TODO try to separate dump file stuff from wiktionary stuff
-		$WiktParser::Source::line =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
+		$self->{src}->line() =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
 		my ($tline, $post) = ($1, $2);
 
 		# Heading
@@ -197,7 +204,7 @@ sub parse_heading_structure {
 		# TODO shouldn't this test be at the bottom of the loop?
 		last if ($post ne '');
 
-		last unless (WiktParser::Source::nextline());
+		last unless ($self->{src}->nextline());
 	} # while (1)
 
 	return $pagetree;

@@ -5,9 +5,24 @@ use vars qw($line);
 
 use strict;
 
+sub new {
+	my $class = shift;
+	my $self = bless {}, $class;
+	$self->{_line} = '';
+	return $self;
+}
+
+sub line {
+	my $self = shift;
+
+	return $self->{_line};
+}
+
 sub nextline {
-	$line = <STDIN>;
-	return $line;
+	my $self = shift;
+
+	$self->{_line} = <STDIN>;
+	return $self->{_line};
 }
 
 1;

@@ -80,7 +80,10 @@ my $headword_genders = {};
 my $dumpparser = new Wiki::DumpParser;
 my $wiktparser = new Wiki::WiktParser;
 
-if ($dumpparser && $wiktparser) {
+my $source = new WiktParser::Source;
+
+if ($dumpparser && $wiktparser && $source) {
+	$dumpparser->set_source( $source );
 	$dumpparser->set_title_handler( \&title_handler );
 	$dumpparser->set_text_handler( \&text_handler );
 
@@ -90,6 +93,7 @@ if ($dumpparser && $wiktparser) {
 
 	set_lang( $lang );
 
+	$wiktparser->set_source( $source );
 	$wiktparser->set_article_start_handler( \&article_start_handler );
 	$wiktparser->set_langsection_handler( \&langsection_handler );
 	$wiktparser->set_article_end_handler( \&article_end_handler );
@@ -117,6 +121,10 @@ sub set_lang {
 	}
 }
 
+#
+# Handlers for DumpParser
+#
+
 sub title_handler {
 	my ($ns, $t) = @_;
 	$namespace = $ns;
@@ -126,6 +134,10 @@ sub title_handler {
 sub text_handler {
 	$wiktparser->parse( $namespace, $title );
 }
+
+#
+# Handlers for WiktParser
+#
 
 sub article_start_handler {
 	my $p = shift;

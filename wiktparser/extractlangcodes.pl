@@ -22,10 +22,14 @@ my $ethnologue_counter;
 my $dumpparser = new Wiki::DumpParser;
 my $wiktparser = new Wiki::WiktParser;
 
-if ($dumpparser && $wiktparser) {
+my $source = new WiktParser::Source;
+
+if ($dumpparser && $wiktparser && $source) {
+	$dumpparser->set_source( $source );
 	$dumpparser->set_title_handler( \&title_handler );
 	$dumpparser->set_text_handler( \&text_handler );
 
+	$wiktparser->set_source( $source );
 	$wiktparser->set_template_handler( \&template_handler );
 	$wiktparser->set_article_handler( \&article_handler );
 
@@ -126,7 +130,7 @@ sub template_handler {
 	if ($title =~ /^(lang:)?([a-z][a-z][a-z]?)$/) {
 		my ($which, $langcode) = ($1, $2);
 
-		if ($WiktParser::Source::line =~ /<text xml:space="preserve">(.*?)&lt;noinclude&gt;\[\[Category:Language templates|$title]]&lt;\/noinclude&gt;<\/text>/) {
+		if ($source->line() =~ /<text xml:space="preserve">(.*?)&lt;noinclude&gt;\[\[Category:Language templates|$title]]&lt;\/noinclude&gt;<\/text>/) {
 			my $langname = $1;
 			if ($langname =~ /^\[\[(?:.*\|)?(.*?)]]$/) {
 				$langname = $1;
@@ -151,7 +155,7 @@ sub article_handler {
 
 	# Each line of page wikitext
 	while (1) {
-		$WiktParser::Source::line =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
+		$source->line() =~ /^\s*(?:<text xml:space="preserve">)?(.*?)(<\/text>)?$/;
 		my ($tline, $post) = ($1, $2);
 
 		last if ($post ne '');
@@ -172,7 +176,7 @@ sub article_handler {
 			print STDERR "** iw  $interwiktionary_counter: $langcode -> $title\n";
 		}
 
-		last unless (WiktParser::Source::nextline());
+		last unless ($source->nextline());
 	}
 }
 

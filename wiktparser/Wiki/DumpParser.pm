@@ -33,10 +33,17 @@ require WiktParser::Source;
 sub new {
 	my $class = shift;
 	my $self = bless {}, $class;
+	$self->{src} = undef;
 	$self->{_namespaces} = {};
 	$self->{_maxpages} = 0;
 	$self->{_pagecount} = 0;
 	return $self;
+}
+
+sub set_source {
+	my $self = shift;
+
+	$self->{src} = shift;
 }
 
 sub set_maxpages {
@@ -88,20 +95,20 @@ sub parse {
 
 	# Skip stuff before the <namespaces> section
 
-	while (WiktParser::Source::nextline()) {
-		last if ($WiktParser::Source::line =~ /<namespaces>/);
+	while ($self->{src}->nextline()) {
+		last if ($self->{src}->line() =~ /<namespaces>/);
 	}
 
 	# We read everything and never found <namespaces>
-	if ($WiktParser::Source::line !~ /<namespaces>/) {
+	if ($self->{src}->line() !~ /<namespaces>/) {
 		print STDERR "** namespaces section not found\n";
 		exit;
 	}
 
 	# Handle <namespaces>
 
-	while (WiktParser::Source::nextline()) {
-		if ($WiktParser::Source::line =~ /<namespace key="(-?\d+)"(.*)>/) {
+	while ($self->{src}->nextline()) {
+		if ($self->{src}->line() =~ /<namespace key="(-?\d+)"(.*)>/) {
 			my ($key, $rest) = ($1, $2);
 			if ($rest =~ />(.*)<\/namespace/) {
 				$self->{_namespaces}->{$1} = { 'key' => $key, 'count' => 0, 'name' => $1 };
@@ -114,7 +121,7 @@ sub parse {
 	}
 
 	# Premature EOF
-	if ($WiktParser::Source::line !~ /<\/namespaces>/) {
+	if ($self->{src}->line() !~ /<\/namespaces>/) {
 		print STDERR "** end of namespaces section not found\n";
 		exit;
 	}
@@ -137,15 +144,15 @@ sub parse {
 
 		# Skip anything before next <title>
 		#  Currently </text> </revision> </page> <page>
-		while (WiktParser::Source::nextline()) {
-			if ($WiktParser::Source::line =~ /<title>(.*)<\/title>/) {
+		while ($self->{src}->nextline()) {
+			if ($self->{src}->line() =~ /<title>(.*)<\/title>/) {
 				$title = $1;
 				last;
 			}
 		}
 
 		# EOF
-		if ($WiktParser::Source::line !~ /<title>.*<\/title>/) {
+		if ($self->{src}->line() !~ /<title>.*<\/title>/) {
 			print STDERR "** no more pages\n";
 			return;
 		}
@@ -164,17 +171,17 @@ sub parse {
 		}
 
 		# Skip to start of wikitext
-		while (WiktParser::Source::nextline()) {
-			last if ($WiktParser::Source::line =~ /<text xml:space="preserve">/);
+		while ($self->{src}->nextline()) {
+			last if ($self->{src}->line() =~ /<text xml:space="preserve">/);
 		}
 
 		# If we ever had an article record without a text record
-		if ($WiktParser::Source::line =~ /<title>.*<\/title>/) {
+		if ($self->{src}->line() =~ /<title>.*<\/title>/) {
 			print STDERR "** $title has no text field\n";
 			exit;
 		}
 
-		if ($WiktParser::Source::line !~ /<text xml:space="preserve">/) {
+		if ($self->{src}->line() !~ /<text xml:space="preserve">/) {
 			print STDERR "** unexpected end of file while looking for $title's text field\n";
 			exit;
 		}
@@ -184,10 +191,10 @@ sub parse {
 		}
 
 		# Skip remainder of page
-		while (WiktParser::Source::nextline()) {
-			last if ($WiktParser::Source::line =~ /<\/page>/);
+		while ($self->{src}->nextline()) {
+			last if ($self->{src}->line() =~ /<\/page>/);
 		}
-		if ($WiktParser::Source::line !~ /<\/page>/) {
+		if ($self->{src}->line() !~ /<\/page>/) {
 			print STDERR "** unexpected end of file in $title\n";
 			exit;
 		}
