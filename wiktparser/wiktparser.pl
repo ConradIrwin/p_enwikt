@@ -23,7 +23,11 @@ if ($opts{s} ne 'dump' && $opts{s} ne 'random') {
 if ($opts{l} && $opts{L}) {
 	die "Use either -l for language code or -L for language name\n";
 } elsif ($opts{l}) {
-	$lang = Wiki::WiktLang::bycode($opts{l});
+	if ($opts{l} eq '*') {
+		$lang = '*';
+	} else {
+		$lang = Wiki::WiktLang::bycode($opts{l});
+	}
 } elsif ($opts{L}) {
 	$lang = Wiki::WiktLang::byname($opts{L});
 } else {
@@ -177,8 +181,10 @@ exit;
 sub set_lang {
 	my $lang = shift;
 
+	my $code = $lang eq '*' ? '[a-z][a-z][a-z]?' : $lang->{code};
+
 	for my $hm (@$headword_matchers) {
-		$hm->[0] =~ s/LANG_CODE/$lang->{code}/g;
+		$hm->[0] =~ s/LANG_CODE/$code/g;
 	}
 }
 
@@ -212,7 +218,7 @@ sub langsection_handler {
 
 	my $langsection = shift;
 
-	if ($langsection->{heading} =~ /$lang->{pattern}/o) {
+	if ($lang eq '*' || $langsection->{heading} =~ /$lang->{pattern}/o) {
 
 		my $etymcount = 0;
 		my $nouncount = 0;
