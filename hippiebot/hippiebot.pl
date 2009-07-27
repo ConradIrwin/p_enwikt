@@ -9,10 +9,12 @@ use strict;
 use File::HomeDir;
 use JSON;
 use LWP::Simple;
+use LWP::UserAgent;
 use POE;
 use POE::Component::IRC;
 use Tie::TextDir;
 use Time::Duration;
+use URI::Escape;
 
 # slurp dumped enwikt language code : name mappings
 open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
@@ -379,17 +381,39 @@ sub do_random {
     my $ok = 0;
     my $resp = 'Something random went wrong.';
 
+    my $langenc = $lang;
+    $langenc =~ s/ /\\ /g;
+
     my $args = substr($lang, 0, 1) =~ /^[a-z]$/ ? 'langcode' : 'langname';
 
-    my @dat = `perl public_html/randompage.fcgi --$args=$lang`;
+    my $uri = 'http://toolserver.org/~hippietrail/randompage.fcgi?' . $args . '=' . $lang;
+    my $head = LWP::UserAgent->new->simple_request(HTTP::Request->new(HEAD => $uri));
+    my $location = $head->header('location');
 
-    if (@dat) {
-        my $l = $dat[0];
-        if ($l =~ s/word '(.*)' which/word [[$1]] which/) {
-            $ok = 1;
-            $resp = $l;
+    if ($location) {
+        $ok = 1;
+        $location =~ /\/wiki\/(.*)\?rndlangcached=(\w+)#(.*)$/;
+
+        my ($word, $iscached, $langname) = (uri_unescape($1), $2 eq 'yes', $3);
+        $langname =~ s/_/ /g;
+
+        $resp = "How about the nice $langname word [[$word]] ";
+        $resp .= $iscached ? 'which I just happened to have lying around?'
+                           : 'which I’ve gone to a bit of trouble to get for you?';
+    }
+
+    else {
+        my @dat = `perl public_html/randompage.fcgi --$args=$langenc`;
+
+        if (@dat) {
+            my $l = $dat[0];
+            if ($l =~ s/word '(.*)' which/word [[$1]] which/) {
+                $ok = 1;
+                $resp = $l;
+            }
         }
     }
+
     hippbotlog('random', $lang, $ok);
 
     return $resp;
