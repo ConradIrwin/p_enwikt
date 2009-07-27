@@ -39,6 +39,7 @@ my %fam = (
 	btk => 'Batak',
 	cai => 'Central American Indian',
 	cau => 'Caucasian',
+    cba => 'Chibchan',
 	cel => 'Celtic',
 	cmc => 'Chamic',
 	cus => 'Cushitic',
@@ -224,46 +225,52 @@ sub on_msg {
 }
 
 sub do_lang {
-    my $incode = shift;
-    my $codes = $incode;
+    my $input = shift;
+    my $codes = $input;
 
     my $newuri = 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=';
-    if (exists $three2one{$incode}) {
-        $codes .= ',' . $three2one{$incode};
+    if (exists $three2one{$input}) {
+        $codes .= ',' . $three2one{$input};
     }
 
-    my $nname = normalize_lang_name($incode);
+    my $nname = normalize_lang_name($input);
     if (exists $name2code{$nname}) {
         $codes .= ',' . join(',', @{$name2code{$nname}});
     }
 
-    my $newjson = get $newuri . $codes;
-    my $newref = $js->allow_barekey->decode($newjson);
+    my $json = get $newuri . $codes;
+    my $metadata = $js->allow_barekey->decode($json);
 
-    my $ref = $newref;
+    # add info extracted from the Wiktionary templates
+    if (exists $enwikt{$input}) {
+        $metadata->{$input}->{enwiktname} = $enwikt{$input};
+    }
+
     my $ok = 0;
     my @resps;
 
-    if ($ref) {
-        foreach my $l (%$ref) {
-            my $eng = lang_key_to_english($l, $ref->{$l});
-            if ($eng) {
-                $ok = 1;
-                push @resps, $eng;
+    if ($metadata) {
+        if (scalar keys %$metadata) {
+            foreach my $l (%$metadata) {
+                my $eng = metadata_to_english($l, $metadata->{$l});
+                if ($eng) {
+                    $ok = 1;
+                    push @resps, $eng;
+                }
             }
+        } else {
+            @resps = ($input . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.');
         }
-        #    $resp = $outcode . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.';
     } elsif ($@) {
-        $ok = 0;
         @resps = ('something went wrong: ' . $@);
     }
 
-    hippbotlog('lang', $incode, $ok);
+    hippbotlog('lang', $input, $ok);
 
     return \@resps;
 }
 
-sub lang_key_to_english {
+sub metadata_to_english {
     my $incode = shift;
     my $l = shift;
     my $resp;
@@ -280,6 +287,9 @@ sub lang_key_to_english {
     if ($l->{isoname}) {
         $names{$l->{isoname}} = 1;
     }
+    if ($l->{enwiktname}) {
+        $names{$l->{enwiktname}} = 1;
+    }
     if ($l->{nn}) {
         if ($l->{nn} =~ /^(.*?) ?\/ ?(.*?)$/) { # bpy/cr/cu/iu/ku/pih/sh/sr/tt/ug
             $names{$1} = 1;
@@ -291,16 +301,10 @@ sub lang_key_to_english {
             $names{$l->{nn}} = 1;
         }
     }
-    #if (exists $enwikt{$outcode}) {
-    #    $names{$enwikt{$outcode}} = 1;
-    #}
 
     if (scalar keys %names) {
         $resp = $incode;
 
-    #    if ($incode ne $outcode) {
-    #        $resp .= ', ' . $outcode;
-    #    } elsif (exists $l->{iso3}) {
         if (exists $l->{iso3}) {
             $resp .= ', ' . $l->{iso3};
         }
@@ -472,6 +476,8 @@ sub do_hippietrail {
         $resp = 'Sorry master.';
     } elsif ($msg =~ /( |^)\\o\/( |$)/) {
         $resp = '\o/';
+    } elsif ($msg =~ /\b(g'day|hi|greetings) bot\b/) {
+        $resp = $1 . ' master';
     }
 
     return $resp;
