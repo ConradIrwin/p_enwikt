@@ -14,11 +14,10 @@ use POE::Component::IRC;
 use Tie::TextDir;
 use Time::Duration;
 
-# read dumped enwikt language code : name mappings
+# slurp dumped enwikt language code : name mappings
 open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
 my $enwikt = do { local $/; <IN> }; # Read file contents into scalar
 close(IN);
-
 
 my %enwikt;
 eval '%enwikt = (' . $enwikt . ');';
@@ -97,6 +96,7 @@ while (my ($k, $v) = each %$iso3) {
 }
 
 sub CHANNEL () { $ARGV[0] ? '#hippiebot' : '#wiktionary' }
+sub BOTNICK () { $ARGV[0] ? 'hippiebot-d' : 'hippiebot' }
 
 # Create the component that will represent an IRC network.
 my ($irc) = POE::Component::IRC->spawn();
@@ -117,9 +117,8 @@ POE::Session->create(
 sub bot_start {
     $irc->yield( register => "all" );
 
-    my $nick = $ARGV[0] ? 'hippiebot-d' : 'hippiebot';
     $irc->yield( connect =>
-          { Nick => $nick,
+          { Nick => BOTNICK,
             Username => 'hippiebot',
             Ircname  => 'POE::Component::IRC hippietrail bot',
             Server   => 'irc.freenode.net',
@@ -147,7 +146,6 @@ sub on_public {
 
         my $resp = do_lang($incode);
 
-        # Send a response back to the server.
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
@@ -156,7 +154,14 @@ sub on_public {
 
         my $resp = do_dumps();
 
-        # Send a response back to the server.
+        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    }
+
+    elsif ( my ($lang) = $msg =~ /^random (.+)/ ) {
+        print " [$ts] <$nick:$channel> $msg\n";
+
+        my $resp = do_random($lang);
+
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 }
@@ -172,18 +177,20 @@ sub on_msg {
     print " [$ts] <$nick:$channel> $msg\n";
 
     if ( my ($incode) = $msg =~ /^lang (.+)/ ) {
-
         my $resp = do_lang($incode);
 
-        # Send a response back to the asker.
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
 
     elsif ( $msg =~ /^dumps$/ ) {
-
         my $resp = do_dumps();
 
-        # Send a response back to the asker.
+        $resp && $irc->yield( privmsg => $nick, $resp );
+    }
+
+    elsif ( my ($lang) = $msg =~ /^random (.+)/ ) {
+        my $resp = do_random($incode);
+
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
 }
@@ -201,10 +208,12 @@ sub do_lang {
         $ref = $js->allow_barekey->decode($json);
     }
 
+    my $ok = 0;
     my $resp;
 
     if ($ref) {
         if (exists $ref->{$outcode}) {
+            $ok = 1;
             my $l = $ref->{$outcode};
             my %names;
 
@@ -232,6 +241,7 @@ sub do_lang {
             if (exists $enwikt{$outcode}) {
                 $names{$enwikt{$outcode}} = 1;
             }
+
             if (scalar keys %names) {
                 $resp = $incode;
 
@@ -245,10 +255,20 @@ sub do_lang {
                 if (exists $l->{fam} || exists $l->{geo}) {
                     $resp .= ', a';
                     if (exists $l->{fam}) {
-                        $resp .= 'n' if ($fam{$l->{fam}} =~ /^[aeiouAEIUO]/);
-                        $resp .= ' ' . $fam{$l->{fam}};
+                        my $famcode = $l->{fam};
+                        my $famname = $fam{$famcode};
+                        $famname = '"' . $famcode . '"' unless ($famname);
+                        if ($famcode eq 'Isolate') {
+                            $resp .= ' language isolate';
+                        } else {
+                            $resp .= 'n' if ($famname =~ /^[aeiouAEIUO]/);
+                            $resp .= ' ' . $famname;
+                            $resp .= ' language';
+                        }
+                    } else {
+                        $resp .= ' language';
                     }
-                    $resp .= ' language';
+
                     if (exists $l->{geo}) {
                         $resp .= ' of ';
                         if (ref($l->{geo}) eq 'ARRAY') {
@@ -317,25 +337,61 @@ sub do_lang {
                 }
             }
         } else {
+            $ok = 0;
             $resp = $outcode . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.';
         }
     } elsif ($@) {
+        $ok = 0;
         $resp = 'something went wrong: ' . $@;
     }
+
+    hippbotlog('lang', $incode, $ok);
 
     return $resp;
 }
 
 sub do_dumps {
+    my $ok = 0;
     my $resp = 'I don\'t know anything about the dumps right now.';
     my @dat = `perl latestdump.pl x`;
     if (@dat) {
+        $ok = 1;
         $resp = join(', ', map {
             /^(.*)\t(.*)\t(.*)$/;
             $1 . ': ' . $2 . ' (' . duration(time - $3) . ' ago)';
         } @dat);
     }
+    hippbotlog('dumps', '', $ok);
+
     return $resp;
+}
+
+sub do_random {
+    my $lang = shift;
+    my $ok = 0;
+    my $resp = 'Something random went wrong.';
+
+    my $args = substr($lang, 0, 1) =~ /^[a-z]$/ ? 'langcode' : 'langname';
+
+    my @dat = `perl public_html/randompage.fcgi --$args=$lang`;
+
+    if (@dat) {
+        my $l = $dat[0];
+        if ($l =~ s/word '(.*)' which/word [[$1]] which/) {
+            $ok = 1;
+            $resp = $l;
+        }
+    }
+    hippbotlog('random', $lang, $ok);
+
+    return $resp;
+}
+
+sub hippbotlog {
+    if (open(LFH, ">>hippiebot.log")) {
+        print LFH shift, "\t", shift, "\t", shift, "\n";
+        close(LFH);
+    }
 }
 
 # Run the bot until it is done.
