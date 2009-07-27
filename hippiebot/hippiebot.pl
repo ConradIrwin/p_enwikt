@@ -1,15 +1,17 @@
 #!/usr/bin/perl
 
-# This is a simple IRC bot that knows about languages.
-# It responds to "lang <code>".
+# This is a simple IRC bot that knows about languages. It responds to:
+# "lang <code>", "dumps"
 
 use warnings;
 use strict;
 
+use File::HomeDir;
 use JSON;
 use LWP::Simple;
 use POE;
 use POE::Component::IRC;
+use Tie::TextDir;
 
 # read dumped enwikt language code : name mappings
 open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
@@ -147,6 +149,15 @@ sub on_public {
         # Send a response back to the server.
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
+
+    elsif ( $msg =~ /^dumps$/ ) {
+        print " [$ts] <$nick:$channel> $msg\n";
+
+        my $resp = do_dumps();
+
+        # Send a response back to the server.
+        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    }
 }
 
 # The bot has received a private message.  Parse it for commands, and
@@ -166,15 +177,23 @@ sub on_msg {
         # Send a response back to the asker.
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
+
+    elsif ( $msg =~ /^dumps$/ ) {
+
+        my $resp = do_dumps();
+
+        # Send a response back to the asker.
+        $resp && $irc->yield( privmsg => $nick, $resp );
+    }
 }
 
 sub do_lang {
     my $incode = shift;
-    my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=' . $incode;
+    my $outcode = $incode;
 
+    my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=' . $incode;
     my $ref = $js->allow_barekey->decode($json);
 
-    my $outcode = $incode;
     if (exists $three2one{$incode}) {
         $outcode = $three2one{$incode};
         $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=' . $outcode;
@@ -196,17 +215,25 @@ sub do_lang {
                 $names{$l->{n}} = 1;
             }
             if ($l->{isoname}) {
-print STDERR '** semicolon: ', $l->{isoname}, "\n" if ($l->{isoname} =~ /;/);
                 $names{$l->{isoname}} = 1;
             }
             if ($l->{nn}) {
-                $names{$l->{nn}} = 1;
+                if ($l->{nn} =~ /^(.*?) ?\/ ?(.*?)$/) { # bpy/cr/cu/iu/ku/pih/sh/sr/tt/ug
+                    $names{$1} = 1;
+                    $names{$2} = 1;
+                } elsif ($l->{nn} =~ /^(.*?) - \((.*?)\)$/) { # ks
+                    $names{$1} = 1;
+                    $names{$2} = 1;
+                } else {
+                    $names{$l->{nn}} = 1;
+                }
             }
             if (exists $enwikt{$outcode}) {
                 $names{$enwikt{$outcode}} = 1;
             }
             if (scalar keys %names) {
                 $resp = $incode;
+
                 if ($incode ne $outcode) {
                     $resp .= ', ' . $outcode;
                 } elsif (exists $l->{iso3}) {
@@ -247,19 +274,27 @@ print STDERR '** semicolon: ', $l->{isoname}, "\n" if ($l->{isoname} =~ /;/);
                 }
                 $resp .= '.';
 
-                if (exists $l->{sc}) {
-                    $resp .= ' ';
-                    $resp .= 'It\'s written in the ';
-                    my $n = 1;
-                    if (ref($l->{sc}) eq 'ARRAY') {
-                        $n = scalar @{$l->{sc}};
-                        $resp .= join ', ', @{$l->{sc}}[0 .. $n-2];
-                        $resp .= ' or ' . $l->{sc}->[-1];
-                    } else {
-                        $resp .= $l->{sc};
+                if (exists $l->{sc} || exists $l->{wsc}) {
+                    $resp .= ' It';
+                    if (exists $l->{sc}) {
+                        $resp .= ' ';
+                        $resp .= '\'s written in the ';
+                        my $n = 1;
+                        if (ref($l->{sc}) eq 'ARRAY') {
+                            $n = scalar @{$l->{sc}};
+                            $resp .= join ', ', @{$l->{sc}}[0 .. $n-2];
+                            $resp .= ' or ' . $l->{sc}->[-1];
+                        } else {
+                            $resp .= $l->{sc};
+                        }
+                        $resp .= ' script';
+                        $resp .= 's' if ($n > 1);
+
+                        $resp .= ' but' if (exists $l->{wsc});
                     }
-                    $resp .= ' script';
-                    $resp .= 's' if ($n > 1);
+                    if (exists $l->{wsc}) {
+                        $resp .= ' uses the "' . $l->{wsc} . '" script template';
+                    }
                     $resp .= '.';
                 }
 
@@ -286,6 +321,39 @@ print STDERR '** semicolon: ', $l->{isoname}, "\n" if ($l->{isoname} =~ /;/);
     } elsif ($@) {
         $resp = 'something went wrong: ' . $@;
     }
+
+    return $resp;
+}
+
+sub do_dumps {
+    tie my %home, 'Tie::TextDir', home(), 'rw';  # Open in read/write mode
+
+    my $last;
+    if (exists $home{'.enwikt'}) {
+        $last = $home{'.enwikt'}
+    }
+
+    my $last2;
+    if (exists $home{'.enwikt2'}) {
+        $last2 = $home{'.enwikt2'}
+    }
+
+    untie %home;
+
+    my $resp = 'I don\'t know anything about the dumps right now.';
+    if ($last || $last2) {
+        $resp = 'The ';
+        if ($last) {
+            $resp .= "latest official dump is $last";
+
+            $resp .= ', and the ';
+        }
+        if ($last2) {
+            $resp .= "latest devtionary dump is $last2";
+        }
+        $resp .= '.';
+    }
+    return $resp;
 }
 
 # Run the bot until it is done.
