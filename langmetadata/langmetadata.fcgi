@@ -45,7 +45,10 @@ my %metadata_dtd = (
     n   => 'soa',       # string or array of them
     anc => 'bool',
     fam => 'string',
-    geo => 'soa'        # string or array of them
+    geo => 'soa',       # string or array of them
+    altmapfrom => 'string',
+    altmapto => 'string',
+    altmapstrip => 'string'
 );
 
 my $metadata = {
@@ -59,12 +62,15 @@ my $metadata = {
     an=>{sc=>'Latn',n=>'Aragonese',fam=>'Romance',geo=>'ES'},
     ang=>{sc=>'Latn',g=>'mfn',p=>1,alt=>1,n=>['Old English','Anglo-Saxon'],anc=>1,fam=>'Germanic'},
     ar=>{sc=>'Arab',g=>'mf',p=>1,alt=>1,n=>'Arabic',fam=>'Semitic'},
+    arc=>{sc=>'Hebr',g=>'mf',p=>1,n=>'Aramaic',fam=>'Semitic'}, # dual
+    arz=>{sc=>'Arab',g=>'mf',p=>1,alt=>1,n=>'Egyptian Arabic',fam=>'Semitic',geo=>'EG'},
     as=>{sc=>'Beng',n=>'Assamese',fam=>'Indo-Aryan',geo=>'IN'},
     ast=>{sc=>'Latn',g=>'mf',p=>1,n=>'Asturian',fam=>'Romance',geo=>'ES'},
     av=>{sc=>'Cyrl',n=>'Avar',geo=>'RU'},
     ay=>{n=>'Aymara',geo=>['BO','CL','PE']},
-    az=>{sc=>['Latn','Cyrl','Arab'],n=>['Azeri','Azerbaijani'],fam=>'Turkic',geo=>'AZ'},
+    az=>{sc=>['Latn','Cyrl','Arab'],g=>'',alt=>0,n=>['Azeri','Azerbaijani'],fam=>'Turkic',geo=>'AZ'},
     ba=>{sc=>'Cyrl',n=>'Bashkir',fam=>'Turkic',geo=>'RU'},
+    bar=>{sc=>'Latn',n=>'Bavarian',fam=>'Germanic',geo=>['DE','AT']},
     be=>{sc=>['Cyrl','Latn'],g=>'mfn',p=>1,n=>'Belarusian',fam=>'Slavic',geo=>'BY'},
     bg=>{sc=>'Cyrl',g=>'mfn',p=>1,n=>'Bulgarian',fam=>'Slavic',geo=>'BG'},
     bh=>{n=>'Bihari',fam=>'Indo-Aryan',geo=>'IN'},
@@ -80,9 +86,11 @@ my $metadata = {
     chr=>{sc=>'Cher',n=>'Cherokee',fam=>'Iroquoian',geo=>'US'},
     co=>{sc=>'Latn',n=>'Corsican',fam=>'Romance',geo=>['FR','IT']},
     cr=>{sc=>'Cans',n=>'Cree',fam=>'Algonquian',geo=>'CA'},
+    crh=>{sc=>'Latn',g=>'',alt=>0,n=>'Crimean Tatar',fam=>'Turkic',geo=>'UZ'},
     cs=>{sc=>'Latn',g=>'mfn',p=>1,n=>'Czech',fam=>'Slavic',geo=>'CZ'},
     csb=>{n=>'Kashubian',fam=>'Slavic',geo=>'PL'},
     cu=>{sc=>['Cyrs','Glag'],g=>'mfn',p=>1,n=>'Old Church Slavonic',anc=>1,fam=>'Slavic'},    # dual
+    cv=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Chuvash',fam=>'Turkic',geo=>'RU'},
     cy=>{sc=>'Latn',g=>'mf',p=>1,n=>'Welsh',fam=>'Celtic',geo=>'GB'},
     da=>{sc=>'Latn',g=>'cn',p=>1,n=>'Danish',fam=>'Germanic',geo=>'DK'},
     de=>{sc=>'Latn',g=>'mfn',p=>1,n=>'German',fam=>'Germanic',geo=>['DE','AT','CH']},
@@ -97,6 +105,7 @@ my $metadata = {
     eu=>{sc=>'Latn',g=>'',p=>1,alt=>0,n=>'Basque',fam=>'Isolate',geo=>['ES','FR']},
     fa=>{sc=>'Arab',g=>'',n=>['Persian','Farsi'],geo=>'IR'},
     fi=>{sc=>'Latn',g=>'',p=>1,n=>'Finnish',geo=>'FI'},
+    fil=>{sc=>'Latn',g=>'',p=>0,n=>['Filipino','Pilipino'],geo=>'PH'},
     fj=>{sc=>'Latn',n=>'Fijian',fam=>'Austronesian',geo=>'FJ'},
     fo=>{sc=>'Latn',g=>'mfn',n=>['Faroese','Faeroese'],fam=>'Germanic',geo=>'FO'},
     fr=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'French',fam=>'Romance',geo=>['FR','CH','BE']},
@@ -135,15 +144,17 @@ my $metadata = {
     jv=>{n=>'Javanese'},
     ka=>{sc=>'Geor',g=>'',alt=>0,n=>'Georgian',geo=>'GE'},
     kjh=>{sc=>'Cyrl',n=>'Khakas'},
-    kk=>{n=>'Kazakh'},
+    kk=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Kazakh',fam=>'Turkic',geo=>'AZ'},
     kl=>{n=>'Greenlandic'},
     km=>{sc=>'Khmr',n=>['Khmer','Cambodian'],geo=>'KH'},
     kn=>{sc=>'Knda',n=>'Kannada',fam=>'Dravidian',geo=>'IN'},
     ko=>{sc=>'Kore',g=>'',p=>0,alt=>0,n=>'Korean',geo=>['KR','KP']},
+    ks=>{sc=>['Arab','Deva'],n=>'Kashmiri'},
     ku=>{sc=>'Arab',n=>'Kurdish'},
     kw=>{n=>'Cornish'},
-    ky=>{n=>'Kirghiz'},
+    ky=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Kyrgyz',fam=>'Turkic',geo=>'KG'},
     la=>{sc=>'Latn',g=>'mfn',p=>1,alt=>1,n=>'Latin',anc=>1,fam=>'Romance'},
+    lez=>{sc=>'Cyrl',n=>'Lezgi'},
     lo=>{sc=>'Laoo',g=>'',p=>0,alt=>0,n=>'Lao',geo=>'LA'},
     lt=>{sc=>'Latn',g=>'mf',p=>1,alt=>1,n=>'Lithuanian',fam=>'Baltic',geo=>'LT'},
     lv=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Latvian',fam=>'Baltic',geo=>'LV'},
@@ -156,15 +167,20 @@ my $metadata = {
     nl=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Dutch',fam=>'Germanic',geo=>['NL','BE']},
     nn=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Nynorsk',fam=>'Germanic',geo=>'NO'},
     no=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Norwegian',fam=>'Germanic',geo=>'NO'},
+    os=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Ossetian',geo=>'GE'},
     osc=>{sc=>'Ital',n=>'Oscan'},
+    ota=>{sc=>'Arab',n=>'Ottoman Turkish'},
+    pa=>{sc=>['Guru','Arab'],n=>['Punjabi','Panjabi'],g=>'mf',p=>1},
     peo=>{sc=>'Xpeo',n=>'Old Persian'},
     phn=>{sc=>'Phnx',n=>'Phoenician'},
     pl=>{sc=>'Latn',g=>'mfn',p=>1,n=>'Polish',fam=>'Slavic',geo=>'PL'},
+    ps=>{sc=>'Arab',n=>['Pashto','Pushto']},
     pt=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Portuguese',fam=>'Romance',geo=>['PT','BR']},
     ro=>{sc=>'Latn',g=>'mfn',p=>1,n=>'Romanian',fam=>'Romance',geo=>'RO'},
     ru=>{sc=>'Cyrl',g=>'mfn',p=>1,alt=>1,n=>'Russian',fam=>'Slavic',geo=>'RU'},
     rw=>{sc=>'Latn',n=>'Kinyarwanda',fam=>'Bantu',geo=>'RW'},
     sa=>{sc=>'Deva',g=>'mfn',p=>1,n=>'Sanskrit',geo=>'IN'},
+    sd=>{sc=>'Arab',n=>'Sindhi'},
     si=>{sc=>'Sinh',n=>['Sinhala','Sinhalese'],geo=>'LK'},
     sk=>{sc=>'Latn',g=>'mfn',p=>1,n=>['Slovak','Slovakian'],fam=>'Slavic',geo=>'SK'},
     sl=>{sc=>'Latn',g=>'mfn',p=>1,n=>['Slovene','Slovenian'],fam=>'Slavic',geo=>'SI'},  # dual
@@ -177,14 +193,20 @@ my $metadata = {
     syr=>{sc=>'Syrc',n=>'Syriac'},
     ta=>{sc=>'Taml',g=>'',alt=>0,n=>'Tamil',fam=>'Dravidian',geo=>['IN','LK']},
     te=>{sc=>'Telu',g=>'',alt=>0,n=>'Telugu',fam=>'Dravidian',geo=>'IN'},
+    tg=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Tajik',geo=>'TJ'},
     th=>{sc=>'Thai',g=>'',p=>0,alt=>0,n=>'Thai',geo=>'TH'},
     ti=>{sc=>'Ethi',n=>'Tigrinya'},
     tig=>{sc=>'Ethi',n=>'Tigre'},
+    tk=>{sc=>'Latn',g=>'',alt=>0,n=>'Turkmen',fam=>'Turkic',geo=>'TM'},
+    tl=>{sc=>['Latn','Tglg'],g=>'',p=>0,n=>'Tagalog',geo=>'PH'},
     tmr=>{sc=>'Hebr',n=>'Talmudic Aramaic'},
     tr=>{sc=>'Latn',g=>'',p=>1,alt=>1,n=>'Turkish',fam=>'Turkic',geo=>'TR'},
+    tt=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Tatar',fam=>'Turkic',geo=>'RU'},
+    ug=>{sc=>'Arab',n=>['Uyghur','Uighur']},
     uga=>{sc=>'Ugar',n=>'Ugaritic'},
     uk=>{sc=>'Cyrl',g=>'mfn',p=>1,n=>'Ukrainian',fam=>'Slavic',geo=>'UA'},
     ur=>{sc=>'Arab',g=>'mf',p=>1,n=>'Urdu',geo=>['PK','IN']},
+    uz=>{sc=>'Latn',g=>'',alt=>0,n=>'Uzbek',fam=>'Turkic',geo=>'UZ'},
     vi=>{sc=>'Latn',g=>'',p=>0,n=>'Vietnamese',geo=>'VN'},
     xae=>{sc=>'Ital',n=>'Aequian'},
     xcr=>{sc=>'Cari',n=>'Carian'},
@@ -198,13 +220,31 @@ my $metadata = {
     xve=>{sc=>'Ital',n=>'Venetic'},
     xvo=>{sc=>'Ital',n=>'Volscian'},
     yi=>{sc=>'Hebr',g=>'mfn',p=>1,n=>'Yiddish',fam=>'Germanic'},
-    yua=>{sc=>'Latn',p=>1,alt=>1,n=>'Yucatec Maya'},
+    yua=>{sc=>'Latn',p=>1,alt=>1,n=>'Yucatec Maya',geo=>'MX'},
     zh=>{sc=>'Hani',g=>'',p=>0},
     zu=>{sc=>'Latn',n=>'Zulu'}
 };
 
 # WikiMedia metadata
-my $wmmetadata;
+my $wmmetadata = {
+    'bat-smg'=>{n=>'Samogitian'},
+    'be-x-old'=>{sc=>'Cyrl',n=>'Belarusian (Tarashkevitsa)'},
+    bh=>{sc=>'Deva',n=>'Bihari',fam=>'Indo-Aryan',geo=>'IN'},
+    'cbk-zam'=>{n=>'Zamboanga Chavacano'},
+    eml=>{n=>'Emiliano-Romagnolo'},
+    'fiu-vro'=>{n=>'Võro'},
+    'map-bms'=>{n=>'Banyumasan'},
+    'mo'=>{sc=>'Cyrl',n=>'Moldavian'}, # locked
+    nah=>{n=>'Nahuatl'},
+    'nds-nl'=>{n=>'Dutch Low Saxon'},
+    'roa-rup'=>{n=>'Aromanian'},
+    'roa-tara'=>{n=>'Tarantino'},
+    simple=>{sc=>'Latn',n=>'Simple English'},
+    tokipona=>{n=>'Toki Pona'},
+    'zh-classical'=>{sc=>'Hant',n=>'Old Chinese'},
+    'zh-min-nan'=>{sc=>'Latn',n=>'Min Nan'},
+    'zh-yue'=>{sc=>'Hani',n=>'Cantonese'}
+};
 
 # read which language wiktionaries exist from noc.wikimedia.org
 
@@ -219,14 +259,50 @@ if (defined $wmlangcontent) {
 }
 
 # English Wiktionary metadata
+
 my $enwiktmetadata = {
+    ang=>{altmapfrom=>'ĀāǢǣĊċĒēĠġĪīŌōŪūȲȳ',altmapto=>'AaÆæCcEeGgIiOoUuYy'},
+    aoq=>{n=>'Ammonite'},
+    ar=>{altmapstrip=>'\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652'},
+    'ast-leo'=>{n=>'Leonese'},
+    'el-it'=>{n=>'Salentine Greek'},
+    'eml-rom'=>{n=>'Romagnolo'},
     fa=>{wsc=>'fa-Arab'},
+    'fr-ca'=>{n=>'Canadian French'},
+    'fr-nng'=>{n=>'Guernésiais'},
+    'fr-nnj'=>{n=>'Jèrriais'},
+    'fr-nnx'=>{n=>'Norman'},
     grc=>{wsc=>'polytonic'},
+    he=>{altmapstrip=>'\u05B0\u05B1\u05B2\u05B3\u05B4\u05B5\u05B6\u05B7\u05B8\u05B9\u05BA\u05BB\u05BC\u05BD\u05BF\u05C1\u05C2'},
+    hr=>{altmapfrom=>'ȀȁÀàȂȃÁáĀāȄȅÈèȆȇÉéĒēȈȉÌìȊȋÍíĪīȌȍÒòȎȏÓóŌōȐȑȒȓŔŕȔȕÙùȖȗÚúŪū',altmapto=>'AaAaAaAaAaEeEeEeEeEeIiIiIiIiIiOoOoOoOoOoRrRrRrUuUuUuUuUu',altmapstrip=>'\u030F\u0300\u0311\u0301\u0304'},
+    ks=>{wsc=>'ks-Arab'},   # TODO needs 'Deva' too since wsc overrides sc but the wsc code cannot handle array
     ku=>{wsc=>'ku-Arab'},
-    ur=>{wsc=>'ur-Arab'}
+    la=>{altmapfrom=>'ĀāĂăĒēĔĕĪīĬĭŌōŎŏŪūŬŭ',altmapto=>'AaAaEeEeIiIiOoOoUuUu'},
+    lt=>{altmapfrom=>'áãàéẽèìýỹñóõòúù',altmapto=>'aaaeeeiyynooouu',altmapstrip=>'\u0340\u0301\u0303'},  # unchecked, from cirwin's code
+    mol=>{sc=>'Cyrl',n=>'Moldavian'},
+    'nap-cal'=>{n=>'Calabrese'},
+    'no-rik'=>{n=>'Norwegian Riksmål'},
+    ota=>{wsc=>'ota-Arab'},
+    # pa-Arab
+    ps=>{wsc=>'ps-Arab'},
+    sd=>{wsc=>'sd-Arab'},
+    ru=>{altmapstrip=>'\u0301'},    # combining acute
+    sfk=>{n=>'Safwa'},
+    'sr-mon'=>{n=>'Montenegrin'},
+    suh=>{n=>'Suba'},
+    szk=>{n=>'Sizaki'},
+    tr=>{altmapfrom=>'ÂâÛû',altmapto=>'AaUu'},
+    'twf-pic'=>{n=>'Picuris'},
+    ug=>{wsc=>'ug-Arab'},
+    ur=>{wsc=>'ur-Arab'},
+    wwg=>{n=>'Woiwurrung'},
+    yi=>{wsc=>'yi-Hebr'},
+    'zh-cn'=>{n=>'Simplified Chinese'},
+    'zh-tw'=>{n=>'Traditional Chinese'},
+    zkm=>{n=>'Maikoti'}
 };
 
-# get the superset of all language codes from metadata table, MediaWiki, and en.wiktionary
+# get the superset of all language codes from ISO, MediaWiki, and en.wiktionary
 my %langsuperset = map {$_, 1} (keys %$metadata, keys %$wmmetadata, keys %$enwiktmetadata);
 
 # FastCGI loop
@@ -237,7 +313,7 @@ while (FCGI::accept >= 0) {
     my %opts = ('format' => 'json');
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, 'format', 'langs', 'fields'); 
+    CliOrCgiOptions(\%opts, 'format', 'langs', 'fields', 'callback'); 
         
     my %langs = map { $_ => 1 } split ',', $opts{langs} if ($opts{langs});
     my %fields = map { $_ => 1 } split ',', $opts{fields} if ($opts{fields});
@@ -263,107 +339,13 @@ while (FCGI::accept >= 0) {
             }
         }
     }
-    
-    dumpresults($opts{format}, \%custommetadata);
+ 
+    dumpresults(\%custommetadata, $opts{format}, $opts{callback});
 }
 
 #exit;
 
 ##########################################
-
-sub dumpresults {
-    my $format = shift;
-    my $r = shift;
-    my $indent = 0;
-
-    # we must output the HTTP headers to STDOUT before anything else
-    $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
-
-    if ($format eq 'jsonfm') {
-        dumpresults_jsonfm($r);
-    } else {
-        dumpresults_json($r);
-    }
-
-    sub dumpresults_json {
-        my $r = shift;
-        #
-        my $lhs = shift;
-
-        if (ref($r) eq 'ARRAY') {
-            print '[';
-            for (my $i = 0; $i < scalar @$r; ++$i) {
-                $i && print ',';
-                dumpresults_json($r->[$i]);
-            }
-            print ']';
-        } elsif (ref($r) eq 'HASH') {
-            print '{';
-            #
-            my $i = 0;
-            for my $h (keys %$r) {
-                $i++ && print ',';
-                my $k = $h;
-                unless ($h =~ /^[a-z]+$/) {
-                    $k = '"' . $h . '"';
-                }
-                print $k, ':';
-                dumpresults_json($r->{$h}, $h);
-            }
-            print '}';
-        } elsif ($r =~ /^-?\d+$/) {
-            if ($metadata_dtd{$lhs} eq 'bool') {
-                print $r ? 'true' : 'false';
-            } else {
-                print $r;
-            }
-        } else {
-            print '"', $r, '"';
-        }
-    }
-
-    sub dumpresults_jsonfm {
-        my $r = shift;
-        my $lhs = shift;
-
-        if (ref($r) eq 'ARRAY') {
-            print '[';
-            for (my $i = 0; $i < scalar @$r; ++$i) {
-                $i && print ', ';
-                dumpresults_jsonfm($r->[$i]);
-            }
-            print ']';
-        } elsif (ref($r) eq 'HASH') {
-            print "{\n";
-            ++$indent;
-            my $i = 0;
-            for my $h (keys %$r) {
-                $i++ && print ",\n";
-                my $k = $h;
-                unless ($h =~ /^[a-z]+$/) {
-                    $k = '"' . $h . '"';
-                }
-                print '  ' x $indent, $k, ': ';
-                dumpresults_jsonfm($r->{$h}, $h);
-            }
-            print "\n", '  ' x --$indent, '}';
-        } elsif ($r =~ /^-?\d+$/) {
-            if ($metadata_dtd{$lhs} eq 'bool') {
-                print $r ? 'true' : 'false';
-            } else {
-                print $r;
-            }
-        } else {
-            print '"', $r, '"';
-        }
-    }
-}
-
-sub dumperror {
-    dumpresults( { error => { code => shift, info => shift} } );
-
-    exit;
-}
 
 sub CliOrCgiOptions {
     my $opts = shift;
@@ -380,5 +362,71 @@ sub CliOrCgiOptions {
     } else {
         GetOptions($opts, map { $_ . '=s', } @optnames);
     }
+}
+
+sub dumpresults {
+    my $r = shift;
+    my $format = shift;
+    my $callback = shift;
+
+    # we must output the HTTP headers to STDOUT before anything else
+    $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
+
+    # XXX my doesn't work for these two line with fcgi!
+    # XXX it will be right in dumpresults context but wrong in dumpresults_json!
+    our $indent = 0;
+    our $fmt = $format eq 'jsonfm' ? 1 : 0;
+
+    $callback && print $callback, '(';
+    dumpresults_json($r);
+    $callback && print ')';
+
+    sub dumpresults_json {
+        my $r = shift;
+        my $lhs = shift;
+
+        if (ref($r) eq 'ARRAY') {
+            print '[';
+            for (my $i = 0; $i < scalar @$r; ++$i) {
+                $i && print ',';
+                $i && $fmt && print ' ';
+                dumpresults_json($r->[$i]);
+            }
+            print ']';
+        } elsif (ref($r) eq 'HASH') {
+            print "{";
+            $fmt && print "\n";
+            ++$indent;
+            my $i = 0;
+            for my $h (keys %$r) {
+                $i && print ",";
+                $i++ && $fmt && print "\n";
+                my $k = $h;
+                unless ($h =~ /^[a-z]+$/) {
+                    $k = '"' . $h . '"';
+                }
+                $fmt && print '  ' x $indent;
+                print $k, ':';
+                $fmt && print ' ';
+                dumpresults_json($r->{$h}, $h);
+            }
+            $fmt && print "\n", '  ' x --$indent;
+            print '}';
+        } elsif ($r =~ /^-?\d+$/) {
+            if ($metadata_dtd{$lhs} eq 'bool') {
+                print $r ? 'true' : 'false';
+            } else {
+                print $r;
+            }
+        } else {
+            print '"', $r, '"';
+        }
+    }
+}
+
+sub dumperror {
+    dumpresults( { error => { code => shift, info => shift} } );
+
+    exit;
 }
 
