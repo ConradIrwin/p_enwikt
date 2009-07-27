@@ -1,6 +1,8 @@
 #!/usr/bin/perl
 
 # what are the latest dumps of en.wiktionary.org
+# with no args outputs pretty format and writes latest dates to hidden files
+# with any args outputs tab-delimited format and doesn't write to the files
 
 use strict;
 
@@ -14,36 +16,46 @@ use Time::Duration;
 use URI::Escape;
 use XML::Parser::Lite;
 
-my ($latest, $latesturi, $age) = latest_official();
-my ($latest2, $latesturi2, $age2) = latest_devtionary();
+my $botmode = exists $ARGV[0];
+
+my ($latest, $latesturi, $ts) = latest_official();
+my ($latest2, $latesturi2, $ts2) = latest_devtionary();
 
 ####
-
-tie my %home, 'Tie::TextDir', home(), 'rw';  # Open in read/write mode
 
 my $last;
-if (exists $home{'.enwikt'}) {
-    $last = $home{'.enwikt'}
-}
-
 my $last2;
-if (exists $home{'.enwikt2'}) {
-    $last2 = $home{'.enwikt2'}
+
+unless ($botmode) {
+    tie my %home, 'Tie::TextDir', home(), 'rw';  # Open in read/write mode
+
+    if (exists $home{'.enwikt'}) {
+        $last = $home{'.enwikt'}
+    }
+    $home{'.enwikt'} = $latest;
+
+    if (exists $home{'.enwikt2'}) {
+        $last2 = $home{'.enwikt2'}
+    }
+    $home{'.enwikt2'} = $latest2;
+
+    untie %home;
 }
 
 ####
 
-print 'official dump: last: ', ($last ? $last : 'none'), ', latest: ', $latest, ($last && $latest gt $last ? ' ** NEW ** (' : ' ('), duration($age), " ago)\n";
-print substr($latesturi, 0, -8), "\n\n";
+my $now = time;
 
-$home{'.enwikt'} = $latest;
+if ($botmode) {
+    print "official\t$latest\t", $ts,"\n";
+    print "devtionary\t$latest2\t", $ts2, "\n";
+} else {
+    print 'official dump: last: ', ($last ? $last : 'none'), ', latest: ', $latest, ($last && $latest gt $last ? ' ** NEW ** (' : ' ('), duration($now - $ts), " ago)\n";
+    print substr($latesturi, 0, -8), "\n\n";
 
-print 'devtionary dump: last: ', ($last2 ? $last2 : 'none'), ', latest: ', $latest2, ($last2 && $latest2 gt $last2 ? ' ** NEW ** (' : ' ('), duration($age2), " ago)\n";
-print $latesturi2, "\n\n";
-
-$home{'.enwikt2'} = $latest2;
-
-untie %home;
+    print 'devtionary dump: last: ', ($last2 ? $last2 : 'none'), ', latest: ', $latest2, ($last2 && $latest2 gt $last2 ? ' ** NEW ** (' : ' ('), duration($now - $ts2), " ago)\n";
+    print $latesturi2, "\n\n";
+}
 
 exit;
 
@@ -70,13 +82,11 @@ sub latest_official {
 
     $rp->parse($xml);
     my $latest =  substr($latest, -8);
-    my $then = str2time($pubdate);
-    my $now  = time;
 
     my $dumpuri = $feeduri;
     $dumpuri =~ s/latest/$latest/g;
 
-    return ($latest, $dumpuri, $now - $then);
+    return ($latest, $dumpuri, str2time($pubdate));
 }
 
 sub latest_devtionary {
@@ -132,10 +142,7 @@ sub latest_devtionary {
 	$req = HTTP::Request->new(HEAD => $dumpuri);
     $res = $ua->simple_request($req);
 
-    my $date = $res->header('date');
     my $lastmod = $res->header('last-modified');
-    my $then = str2time($lastmod);
-    my $now  = str2time($date);
 
-    return ($newest, $dumpuri, $now - $then);
+    return ($newest, $dumpuri, str2time($lastmod));
 }
