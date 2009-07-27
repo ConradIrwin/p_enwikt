@@ -18,8 +18,6 @@ use XML::Parser::Lite;
 
 my $botmode = exists $ARGV[0];
 
-#my ($latest, $latesturi, $ts) = latest_official();
-#my ($latest2, $latesturi2, $ts2) = latest_devtionary();
 my $res = latest_official();
 my $res2 = latest_devtionary();
 
@@ -35,7 +33,6 @@ unless ($botmode) {
         if (exists $home{'.enwikt'}) {
             $last = $home{'.enwikt'}
         }
-        #$home{'.enwikt'} = $latest;
         $home{'.enwikt'} = $res->[0];
     }
 
@@ -43,7 +40,6 @@ unless ($botmode) {
         if (exists $home{'.enwikt2'}) {
             $last2 = $home{'.enwikt2'}
         }
-        #$home{'.enwikt2'} = $latest2;
         $home{'.enwikt2'} = $res2->[0];
     }
 
@@ -61,13 +57,17 @@ if ($botmode) {
     print 'official dump: ',
         'last: ', ($last ? $last : 'none'),
         ', latest: ', ($res ? $res->[0] : 'none'),
-        ($last && $res && $res->[0] gt $last ? ' ** NEW ** (' : ' ('), duration($now - $res->[2]), " ago)\n";
+        ($last && $res && $res->[0] gt $last ? ' ** NEW **' : ''),
+        $res ? ' ('. duration($now - $res->[2]). ' ago)' : '',
+        "\n";
     print substr($res->[1], 0, -8), "\n\n" if ($res);
 
     print 'devtionary dump: ',
         'last: ', ($last2 ? $last2 : 'none'),
         ', latest: ', ($res2 ? $res2->[0] : 'none'),
-        ($last2 && $res2 && $res2->[0] gt $last2 ? ' ** NEW ** (' : ' ('), duration($now - $res2->[2]), " ago)\n";
+        ($last2 && $res2 && $res2->[0] gt $last2 ? ' ** NEW **' : ''),
+        $res2 ? ' ('. duration($now - $res2->[2]). ' ago)' : '',
+        "\n";
     print $res2->[1], "\n\n" if ($res2);
 }
 
