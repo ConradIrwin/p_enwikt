@@ -52,7 +52,7 @@ my $now = time;
 
 if ($botmode) {
     print "official\t$res->[0]\t", $res->[2],"\n" if ($res);
-    print "devtionary\t$res2->[0]\t", $res->[2], "\n" if ($res2);
+    print "devtionary\t$res2->[0]\t", $res2->[2], "\n" if ($res2);
 } else {
     print 'official dump: ',
         'last: ', ($last ? $last : 'none'),
