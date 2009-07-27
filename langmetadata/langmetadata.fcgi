@@ -19,6 +19,7 @@ use strict;
 use FCGI;
 use Getopt::Long;
 use LWP::Simple;
+use MediaWiki::API;
 
 my $scriptmode = 'cli';
 
@@ -36,6 +37,16 @@ my $scriptmode = 'cli';
 # geo   country(ies)        ISO 3166-1 only
 
 my %metadata_dtd = (
+	iso3	 => 'string',
+	iso2b	 => 'string',
+	iso2t	 => 'string',
+	iso1	 => 'string',
+	isoscope => 'string',
+	isotype	 => 'string',
+	isoname	 => 'string',
+
+    mw  => 'bool',
+
     hw  => 'bool',
     sc  => 'soa',       # string or array of them
     wsc => 'string',
@@ -46,11 +57,14 @@ my %metadata_dtd = (
     anc => 'bool',
     fam => 'string',
     geo => 'soa',       # string or array of them
-    altmapfrom => 'string',
-    altmapto => 'string',
+
+    altmapfrom  => 'string',
+    altmapto    => 'string',
     altmapstrip => 'string'
 );
 
+# generic metadata
+# TODO names could be extracted from ISO 639-3
 my $metadata = {
     aa=>{sc=>['Latn','Ethi'],n=>'Afar',fam=>'Cushitic',geo=>['ET','ER','DJ']},
     ab=>{sc=>['Cyrl','Latn','Geor'],n=>['Abkhaz','Abkhazian'],fam=>'Caucasian',geo=>['GE','TR']},
@@ -225,6 +239,35 @@ my $metadata = {
     zu=>{sc=>'Latn',n=>'Zulu'}
 };
 
+#### language codes from the ISO standard
+
+my $isolangurl = 'http://www.sil.org/iso639-3/iso-639-3_20090210.tab';
+
+print STDERR "getting isolang...\n";
+my $isolangcontent = get $isolangurl;
+die "Couldn't get isolang $isolangurl" unless defined $isolangcontent;
+print STDERR "got isolang.\n";
+
+# strip table headings (including BOM)
+$isolangcontent =~ s/^.*?\n//;
+
+while ($isolangcontent =~ /^(\w\w\w)\t(\w\w\w)?\t(\w\w\w)?\t(\w\w)?\t(\w)\t(\w)\t([^\t]+)/gm) {
+    # ($iso3, $iso2b, $iso2t, $iso1, $scope, $type, $name
+    # ($1,    $2,     $3,     $4,    $5,     $6,    $7);
+
+    my $c = $4 ? $4 : $1;
+
+    $metadata->{$c}{iso2b} = $2 if ($2 && $2 ne $3);
+    if ($c eq $4) {
+        $metadata->{$c}{iso3} = $1;
+    #} elsif ($4) {
+    #    $metadata->{$c}{iso1} = $4;
+    }
+    $metadata->{$c}{isoscope} = $5;
+    $metadata->{$c}{isotype} = $6;
+    $metadata->{$c}{isoname} = $7;
+}
+
 # WikiMedia metadata
 my $wmmetadata = {
     'bat-smg'=>{n=>'Samogitian'},
@@ -247,6 +290,8 @@ my $wmmetadata = {
 };
 
 # read which language wiktionaries exist from noc.wikimedia.org
+# TODO use the sitematrix code from langcodes.pl
+# TODO native names can also be extracted from sitematrix
 
 my $wmlangcontent = get 'http://noc.wikimedia.org/conf/all.dblist';
 
@@ -258,7 +303,31 @@ if (defined $wmlangcontent) {
     }
 }
 
+#my $mw = MediaWiki::API->new();
+#$mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
+#
+#print STDERR "getting sitematrixlang...\n";
+#my $stuff = $mw->api( {
+#    action => 'sitematrix' } )
+#    || die $mw->{error}->{code} . ': ' . $mw->{error}->{details};
+#print STDERR "got sitematrixlang.\n";
+#
+#for (my $prefixnum = 0; 1; ++$prefixnum) {
+#    last if (!exists $stuff->{sitematrix}->{$prefixnum});
+#
+#    my $langcode = $stuff->{sitematrix}->{$prefixnum}->{code};
+#    my $site = $stuff->{sitematrix}->{$prefixnum}->{site};
+#
+#    if (scalar @$site) {
+#        $wmmetadata->{$langcode}{wm} = 1;
+#
+#        $wmmetadata->{$langcode}{hw} = 1 if (grep $_->{code} eq 'wiktionary', @$site);
+#    }
+#}
+
 # English Wiktionary metadata
+# TODO extract code/name pairs using the code from enwiktlangs.pl
+# TODO xx-Yyyy style script templates could be discovered too
 
 my $enwiktmetadata = {
     ang=>{altmapfrom=>'ĀāǢǣĊċĒēĠġĪīŌōŪūȲȳ',altmapto=>'AaÆæCcEeGgIiOoUuYy'},
@@ -313,7 +382,7 @@ while (FCGI::accept >= 0) {
     my %opts = ('format' => 'json');
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, 'format', 'langs', 'fields', 'callback'); 
+    CliOrCgiOptions(\%opts, qw{format langs fields callback has match}); 
         
     my %langs = map { $_ => 1 } split ',', $opts{langs} if ($opts{langs});
     my %fields = map { $_ => 1 } split ',', $opts{fields} if ($opts{fields});
@@ -324,16 +393,39 @@ while (FCGI::accept >= 0) {
 
     # each language
     foreach my $l (keys %langsuperset) {
-        if ($get_all_langs || exists $langs{$l}) {
-            # each field
-            foreach my $f (keys %metadata_dtd) {
-                if ($get_all_fields || exists $fields{$f}) {
-                    if (exists $enwiktmetadata->{$l}->{$f}) {
-                        $custommetadata{$l}->{$f} = $enwiktmetadata->{$l}->{$f};
-                    } elsif (exists $wmmetadata->{$l}->{$f}) {
-                        $custommetadata{$l}->{$f} = $wmmetadata->{$l}->{$f};
-                    } elsif (exists $metadata->{$l}->{$f}) {
-                        $custommetadata{$l}->{$f} = $metadata->{$l}->{$f};
+        my %row;
+        my $emit = 1;
+
+        foreach my $set ($metadata, $wmmetadata, $enwiktmetadata) {
+            foreach my $f (keys %{$set->{$l}}) {
+                $row{$f} = $set->{$l}->{$f};
+            }            
+        }
+    
+        if ($opts{match}) {
+            $emit = 0;
+            my ($k, $v) = split ':', $opts{match};
+            if (ref($row{$k}) eq 'ARRAY' && grep($_ eq $v, @{$row{$k}})) {
+                $emit = 1;
+            } elsif ($metadata_dtd{$k} eq 'bool' && $row{$k} == $v) {
+                $emit = 1;
+            } elsif ($row{$k} eq $v) {
+                $emit = 1;
+            }
+        }
+
+        elsif ($opts{has}) {
+            $emit = exists $row{$opts{has}};
+        }
+
+        if ($emit) {
+            if ($get_all_langs || exists $langs{$l}) {
+                # each field
+                foreach my $f (keys %metadata_dtd) {
+                    if ($get_all_fields || exists $fields{$f}) {
+                        if (exists $row{$f}) {
+                            $custommetadata{$l}->{$f} = $row{$f};
+                        }
                     }
                 }
             }
@@ -343,7 +435,7 @@ while (FCGI::accept >= 0) {
     dumpresults(\%custommetadata, $opts{format}, $opts{callback});
 }
 
-#exit;
+exit;
 
 ##########################################
 
