@@ -430,9 +430,17 @@ sub do_random {
         my ($word, $iscached, $langname) = ($1, $2 eq 'yes', $3);
         $word = uri_unescape($word);
         utf8::decode($word);
+        utf8::decode($langname);
         $langname =~ s/_/ /g;
 
-        $resp = "How about the nice $langname word [[$word]] ";
+        if ($langname eq ' Redirect') {
+            $resp = "How about the nice redirect [[$word]] ";
+        } elsif ($langname =~ /^ /) {
+            my $namespace = substr($langname, 1);
+            $resp = "How about [[$namespace:$word]] from the $namespace namespace ";
+        } else {
+            $resp = "How about the nice $langname word [[$word]] ";
+        }
         $resp .= $iscached ? 'which I just happened to have lying around?'
                            : 'which I’ve gone to a bit of trouble to get for you?';
     }
