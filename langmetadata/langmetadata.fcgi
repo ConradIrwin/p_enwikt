@@ -119,6 +119,7 @@ my $metadata = {
     dax=>{sc=>'Latn',n=>'Dayi',fam=>'aus',geo=>'AU'},
     de=>{sc=>'Latn',g=>'mfn',p=>1,n=>'German',fam=>'gem',geo=>['DE','AT','CH']},
     dhg=>{sc=>'Latn',n=>'Dhangu',fam=>'aus',geo=>'AU'},
+    dhu=>{n=>'Dhurga',fam=>'aus',geo=>'AU'},
     djb=>{sc=>'Latn',n=>'Djinba',fam=>'aus',geo=>'AU'},
     dji=>{sc=>'Latn',n=>'Djinang',fam=>'aus',geo=>'AU'},
     djr=>{sc=>'Latn',n=>'Djambarrpuyngu',fam=>'aus',geo=>'AU'},
@@ -204,9 +205,10 @@ my $metadata = {
     mt=>{sc=>'Latn',g=>'mf',n=>'Maltese',fam=>'sem',geo=>'MT'},
     mwp=>{sc=>'Latn',n=>'Kala Lagaw Ya',fam=>'aus',geo=>'AU'},
     my=>{sc=>'Mymr',n=>['Burmese','Myanmar'],fam=>'sit',geo=>'MM'},
+    nb=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>['Norwegian Bokmål','Bokmål'],fam=>'gem',geo=>'NO'},
     ne=>{sc=>'Deva',n=>'Nepali',geo=>'NP'},
     nl=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Dutch',fam=>'gem',geo=>['NL','BE']},
-    nn=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Nynorsk',fam=>'gem',geo=>'NO'},
+    nn=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>['Norwegian Nynorsk','Nynorsk'],fam=>'gem',geo=>'NO'},
     no=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Norwegian',fam=>'gem',geo=>'NO'},
     nys=>{n=>['Nyunga','Noongar'],fam=>'aus',geo=>'AU'},
     oc=>{sc=>'Latn',g=>'mf',p=>1,n=>'Occitan',fam=>'roa',geo=>'FR'},
@@ -244,6 +246,7 @@ my $metadata = {
     sw=>{sc=>'Latn',g=>'',alt=>0,n=>'Swahili'},  # noun classes
     syr=>{sc=>'Syrc',n=>'Syriac'},
     ta=>{sc=>'Taml',g=>'',alt=>0,n=>'Tamil',fam=>'dra',geo=>['IN','LK']},
+    tbh=>{n=>'Thurawal',fam=>'aus',geo=>'AU'},
     tdd=>{sc=>'Tale'},
     te=>{sc=>'Telu',g=>'',alt=>0,n=>'Telugu',fam=>'dra',geo=>'IN'},
     tg=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Tajik',fam=>'ira',geo=>'TJ'},
@@ -282,6 +285,7 @@ my $metadata = {
     yua=>{sc=>'Latn',p=>1,alt=>1,n=>'Yucatec Maya',fam=>'myn',geo=>'MX'},
     yuk=>{n=>'Yuki',geo=>'US'},
     zh=>{sc=>'Hani',g=>'',p=>0},
+    zne=>{n=>'Zande',geo=>'CD'},
     zu=>{sc=>'Latn',n=>'Zulu'}
 };
 
@@ -368,6 +372,7 @@ my $enwiktmetadata = {
     aoq=>{n=>'Ammonite'},
     ar=>{altmapstrip=>'\u064B\u064C\u064D\u064E\u064F\u0650\u0651\u0652'},
     'ast-leo'=>{n=>'Leonese'},
+    'aus-syd'=>{n=>['Sydney','Dharuk'],fam=>'aus',geo=>'AU'},
     'el-it'=>{n=>'Salentine Greek'},
     'eml-rom'=>{n=>'Romagnolo'},
     fa=>{wsc=>'fa-Arab'},
