@@ -94,22 +94,27 @@ my $js = JSON->new->utf8()->max_depth(10);
 my %three2one;
 my %name2code;
 
+# TODO handle error
 my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?fields=iso3,isoname,n';
-my $data = $js->allow_barekey->decode($json);
+unless ($json) {
+    print STDERR "couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
+} else {
+    my $data = $js->allow_barekey->decode($json);
 
-while (my ($k, $v) = each %$data) {
-    $three2one{$v->{iso3}} = $k if (exists $v->{iso3});
-    my @a;
-    if (ref($v->{n}) eq 'ARRAY') {
-        push @a, @{$v->{n}};
-    } elsif (exists $v->{n}) {
-        push @a, $v->{n};
-    }
-    push @a, $v->{isoname} if (exists $v->{isoname});
-    foreach (@a) {
-        my $n = normalize_lang_name($_);
-        if (!exists $name2code{$n} || !grep ($n eq $k, @{$name2code{$n}})) {
-            push @{$name2code{$n}}, $k;
+    while (my ($k, $v) = each %$data) {
+        $three2one{$v->{iso3}} = $k if (exists $v->{iso3});
+        my @a;
+        if (ref($v->{n}) eq 'ARRAY') {
+            push @a, @{$v->{n}};
+        } elsif (exists $v->{n}) {
+            push @a, $v->{n};
+        }
+        push @a, $v->{isoname} if (exists $v->{isoname});
+        foreach (@a) {
+            my $n = normalize_lang_name($_);
+            if (!exists $name2code{$n} || !grep ($n eq $k, @{$name2code{$n}})) {
+                push @{$name2code{$n}}, $k;
+            }
         }
     }
 }
@@ -238,8 +243,14 @@ sub do_lang {
         $codes .= ',' . join(',', @{$name2code{$nname}});
     }
 
+    my $metadata;
     my $json = get $newuri . $codes;
-    my $metadata = $js->allow_barekey->decode($json);
+
+    if ($json) {
+        $metadata = $js->allow_barekey->decode($json);
+    } else {
+        print STDERR "couldn't get data on language codes ($codes) from langmetadata sever\n";
+    }
 
     # add info extracted from the Wiktionary templates
     if (exists $enwikt{$input}) {
@@ -261,8 +272,12 @@ sub do_lang {
         } else {
             @resps = ($input . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.');
         }
-    } elsif ($@) {
-        @resps = ('something went wrong: ' . $@);
+    } else {
+        if ($@) {
+            @resps = ('something went wrong: ' . $@);
+        } else {
+            @resps = ($input . ': can\'t find it in en.wiktionary language templates.');
+        }
     }
 
     hippbotlog('lang', $input, $ok);
