@@ -151,6 +151,7 @@ my $metadata = {
     grc=>{sc=>'Grek',g=>'mfn',p=>1,n=>'Ancient Greek',anc=>1},
     gu=>{sc=>'Gujr',n=>'Gujarati',fam=>'inc',geo=>'IN'},
     guf=>{sc=>'Latn',n=>'Gupapuyngu',fam=>'aus',geo=>'AU'},
+    gut=>{n=>['Maléku Jaíka','Guatuso'],fam=>'cba',geo=>'CR'},
     gv=>{n=>'Manx',fam=>'cel'},
     ha=>{n=>'Hausa'},
     har=>{sc=>'Ethi',n=>'Harari'},
@@ -290,7 +291,7 @@ my $isolangurl = 'http://www.sil.org/iso639-3/iso-639-3_20090210.tab';
 
 print STDERR "getting isolang...\n";
 my $isolangcontent = get $isolangurl;
-die "Couldn't get isolang $isolangurl" unless defined $isolangcontent;
+dumperror(1, "Couldn't get isolang $isolangurl") unless defined $isolangcontent;
 print STDERR "got isolang.\n";
 
 # strip table headings (including BOM)
