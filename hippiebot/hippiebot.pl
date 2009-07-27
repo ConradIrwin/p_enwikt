@@ -12,6 +12,7 @@ use LWP::Simple;
 use POE;
 use POE::Component::IRC;
 use Tie::TextDir;
+use Time::Duration;
 
 # read dumped enwikt language code : name mappings
 open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
@@ -326,32 +327,13 @@ sub do_lang {
 }
 
 sub do_dumps {
-    tie my %home, 'Tie::TextDir', home(), 'rw';  # Open in read/write mode
-
-    my $last;
-    if (exists $home{'.enwikt'}) {
-        $last = $home{'.enwikt'}
-    }
-
-    my $last2;
-    if (exists $home{'.enwikt2'}) {
-        $last2 = $home{'.enwikt2'}
-    }
-
-    untie %home;
-
     my $resp = 'I don\'t know anything about the dumps right now.';
-    if ($last || $last2) {
-        $resp = 'The ';
-        if ($last) {
-            $resp .= "latest official dump is $last";
-
-            $resp .= ', and the ';
-        }
-        if ($last2) {
-            $resp .= "latest devtionary dump is $last2";
-        }
-        $resp .= '.';
+    my @dat = `perl latestdump.pl x`;
+    if (@dat) {
+        $resp = join(', ', map {
+            /^(.*)\t(.*)\t(.*)$/;
+            $1 . ': ' . $2 . ' (' . duration($3) . ' ago)';
+        } @dat);
     }
     return $resp;
 }
