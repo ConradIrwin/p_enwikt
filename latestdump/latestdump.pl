@@ -18,8 +18,10 @@ use XML::Parser::Lite;
 
 my $botmode = exists $ARGV[0];
 
-my ($latest, $latesturi, $ts) = latest_official();
-my ($latest2, $latesturi2, $ts2) = latest_devtionary();
+#my ($latest, $latesturi, $ts) = latest_official();
+#my ($latest2, $latesturi2, $ts2) = latest_devtionary();
+my $res = latest_official();
+my $res2 = latest_devtionary();
 
 ####
 
@@ -29,15 +31,21 @@ my $last2;
 unless ($botmode) {
     tie my %home, 'Tie::TextDir', home(), 'rw';  # Open in read/write mode
 
-    if (exists $home{'.enwikt'}) {
-        $last = $home{'.enwikt'}
+    if ($res) {
+        if (exists $home{'.enwikt'}) {
+            $last = $home{'.enwikt'}
+        }
+        #$home{'.enwikt'} = $latest;
+        $home{'.enwikt'} = $res->[0];
     }
-    $home{'.enwikt'} = $latest;
 
-    if (exists $home{'.enwikt2'}) {
-        $last2 = $home{'.enwikt2'}
+    if ($res2) {
+        if (exists $home{'.enwikt2'}) {
+            $last2 = $home{'.enwikt2'}
+        }
+        #$home{'.enwikt2'} = $latest2;
+        $home{'.enwikt2'} = $res2->[0];
     }
-    $home{'.enwikt2'} = $latest2;
 
     untie %home;
 }
@@ -47,14 +55,20 @@ unless ($botmode) {
 my $now = time;
 
 if ($botmode) {
-    print "official\t$latest\t", $ts,"\n";
-    print "devtionary\t$latest2\t", $ts2, "\n";
+    print "official\t$res->[0]\t", $res->[2],"\n" if ($res);
+    print "devtionary\t$res2->[0]\t", $res->[2], "\n" if ($res2);
 } else {
-    print 'official dump: last: ', ($last ? $last : 'none'), ', latest: ', $latest, ($last && $latest gt $last ? ' ** NEW ** (' : ' ('), duration($now - $ts), " ago)\n";
-    print substr($latesturi, 0, -8), "\n\n";
+    print 'official dump: ',
+        'last: ', ($last ? $last : 'none'),
+        ', latest: ', ($res ? $res->[0] : 'none'),
+        ($last && $res && $res->[0] gt $last ? ' ** NEW ** (' : ' ('), duration($now - $res->[2]), " ago)\n";
+    print substr($res->[1], 0, -8), "\n\n" if ($res);
 
-    print 'devtionary dump: last: ', ($last2 ? $last2 : 'none'), ', latest: ', $latest2, ($last2 && $latest2 gt $last2 ? ' ** NEW ** (' : ' ('), duration($now - $ts2), " ago)\n";
-    print $latesturi2, "\n\n";
+    print 'devtionary dump: ',
+        'last: ', ($last2 ? $last2 : 'none'),
+        ', latest: ', ($res2 ? $res2->[0] : 'none'),
+        ($last2 && $res2 && $res2->[0] gt $last2 ? ' ** NEW ** (' : ' ('), duration($now - $res2->[2]), " ago)\n";
+    print $res2->[1], "\n\n" if ($res2);
 }
 
 exit;
@@ -86,11 +100,11 @@ sub latest_official {
     my $dumpuri = $feeduri;
     $dumpuri =~ s/latest/$latest/g;
 
-    return ($latest, $dumpuri, str2time($pubdate));
+    return [$latest, $dumpuri, str2time($pubdate)];
 }
 
 sub latest_devtionary {
-    my $ua = LWP::UserAgent->new;
+    my $ua = LWP::UserAgent->new(timeout=>5);
     my %inside;
     my $newest = '';
 
@@ -132,17 +146,23 @@ sub latest_devtionary {
             $site = $s;
             $parser->parse( $res->content );
             last;
+        } else {
+            #print STDERR $res->status_line, "\n";
         }
     }
 
     $parser->eof;
 
-    my $dumpuri = "http://$site/w/dump/xmlu/en-wikt-$newest.xml.bz2";
+    if ($site) {
+        my $dumpuri = "http://$site/w/dump/xmlu/en-wikt-$newest.xml.bz2";
 
-	$req = HTTP::Request->new(HEAD => $dumpuri);
-    $res = $ua->simple_request($req);
+        $req = HTTP::Request->new(HEAD => $dumpuri);
+        $res = $ua->simple_request($req);
 
-    my $lastmod = $res->header('last-modified');
+        my $lastmod = $res->header('last-modified');
 
-    return ($newest, $dumpuri, str2time($lastmod));
+        return [$newest, $dumpuri, str2time($lastmod)];
+    }
+
+    return undef;
 }
