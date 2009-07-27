@@ -5,6 +5,7 @@
 
 use warnings;
 use strict;
+use utf8;
 
 use File::HomeDir;
 use JSON;
@@ -88,13 +89,28 @@ my %fam = (
 
 my $js = JSON->new->utf8()->max_depth(10);
 
+# ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %three2one;
+my %name2code;
 
-my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?fields=iso3';
-my $iso3 = $js->allow_barekey->decode($json);
+my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?fields=iso3,isoname,n';
+my $data = $js->allow_barekey->decode($json);
 
-while (my ($k, $v) = each %$iso3) {
-    $three2one{$v->{iso3}} = $k;
+while (my ($k, $v) = each %$data) {
+    $three2one{$v->{iso3}} = $k if (exists $v->{iso3});
+    my @a;
+    if (ref($v->{n}) eq 'ARRAY') {
+        push @a, @{$v->{n}};
+    } elsif (exists $v->{n}) {
+        push @a, $v->{n};
+    }
+    push @a, $v->{isoname} if (exists $v->{isoname});
+    foreach (@a) {
+        my $n = normalize_lang_name($_);
+        if (!exists $name2code{$n} || !grep ($n eq $k, @{$name2code{$n}})) {
+            push @{$name2code{$n}}, $k;
+        }
+    }
 }
 
 sub CHANNEL () { $ARGV[0] ? '#hippiebot' : '#wiktionary' }
@@ -146,9 +162,10 @@ sub on_public {
     if ( my ($incode) = $msg =~ /^lang (.+)/ ) {
         print " [$ts] <$nick:$channel> $msg\n";
 
-        my $resp = do_lang($incode);
-
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+        my $resps = do_lang($incode);
+        foreach (@$resps) {
+            $irc->yield( privmsg => CHANNEL, $_ );
+        }
     }
 
     elsif ( $msg =~ /^dumps$/ ) {
@@ -187,9 +204,10 @@ sub on_msg {
     print " [$ts] <$nick:$channel> $msg\n";
 
     if ( my ($incode) = $msg =~ /^lang (.+)/ ) {
-        my $resp = do_lang($incode);
-
-        $resp && $irc->yield( privmsg => $nick, $resp );
+        my $resps = do_lang($incode);
+        foreach (@$resps) {
+            $irc->yield( privmsg => $nick, $_ );
+        }
     }
 
     elsif ( $msg =~ /^dumps$/ ) {
@@ -207,24 +225,50 @@ sub on_msg {
 
 sub do_lang {
     my $incode = shift;
-    my $outcode = $incode;
+    my $codes = $incode;
 
-    my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=' . $incode;
-    my $ref = $js->allow_barekey->decode($json);
-
+    my $newuri = 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=';
     if (exists $three2one{$incode}) {
-        $outcode = $three2one{$incode};
-        $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=' . $outcode;
-        $ref = $js->allow_barekey->decode($json);
+        $codes .= ',' . $three2one{$incode};
     }
 
+    my $nname = normalize_lang_name($incode);
+    if (exists $name2code{$nname}) {
+        $codes .= ',' . join(',', @{$name2code{$nname}});
+    }
+
+    my $newjson = get $newuri . $codes;
+    my $newref = $js->allow_barekey->decode($newjson);
+
+    my $ref = $newref;
     my $ok = 0;
-    my $resp;
+    my @resps;
 
     if ($ref) {
-        if (exists $ref->{$outcode}) {
-            $ok = 1;
-            my $l = $ref->{$outcode};
+        foreach my $l (%$ref) {
+            my $eng = lang_key_to_english($l, $ref->{$l});
+            if ($eng) {
+                $ok = 1;
+                print "eng '$eng'\n";
+                push @resps, $eng;
+            }
+        }
+        #    $resp = $outcode . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.';
+    } elsif ($@) {
+        $ok = 0;
+        @resps = ('something went wrong: ' . $@);
+    }
+
+    hippbotlog('lang', $incode, $ok);
+
+    return \@resps;
+}
+
+sub lang_key_to_english {
+    my $incode = shift;
+    my $l = shift;
+    my $resp;
+
             my %names;
 
             if (ref($l->{n}) eq 'ARRAY') {
@@ -248,16 +292,17 @@ sub do_lang {
                     $names{$l->{nn}} = 1;
                 }
             }
-            if (exists $enwikt{$outcode}) {
-                $names{$enwikt{$outcode}} = 1;
-            }
+            #if (exists $enwikt{$outcode}) {
+            #    $names{$enwikt{$outcode}} = 1;
+            #}
 
             if (scalar keys %names) {
                 $resp = $incode;
 
-                if ($incode ne $outcode) {
-                    $resp .= ', ' . $outcode;
-                } elsif (exists $l->{iso3}) {
+            #    if ($incode ne $outcode) {
+            #        $resp .= ', ' . $outcode;
+            #    } elsif (exists $l->{iso3}) {
+                if (exists $l->{iso3}) {
                     $resp .= ', ' . $l->{iso3};
                 }
                 $resp .= ': '. join '; ', keys %names;
@@ -346,17 +391,6 @@ sub do_lang {
                     $resp .= '.';
                 }
             }
-        } else {
-            $ok = 0;
-            $resp = $outcode . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.';
-        }
-    } elsif ($@) {
-        $ok = 0;
-        $resp = 'something went wrong: ' . $@;
-    }
-
-    hippbotlog('lang', $incode, $ok);
-
     return $resp;
 }
 
@@ -427,6 +461,8 @@ sub do_hippietrail {
         $resp = 'Woof!';
     } elsif ($msg =~ /\bbad bot\b/) {
         $resp = 'Sorry master.';
+    } elsif ($msg =~ /( |^)\\o\/( |$)/) {
+        $resp = '\o/';
     }
 
     return $resp;
@@ -437,6 +473,14 @@ sub hippbotlog {
         print LFH shift, "\t", shift, "\t", shift, "\n";
         close(LFH);
     }
+}
+
+sub normalize_lang_name {
+    my $n = shift;
+    $n = lc $n;
+    $n =~ s/[- '()!\.\/=ʼ’]//g;
+    $n =~ tr/àáâãäåçèéêëìíîñóôõöùúüāīṣṭ/aaaaaaceeeeiiinoooouuuaist/;
+    return $n;
 }
 
 # Run the bot until it is done.
