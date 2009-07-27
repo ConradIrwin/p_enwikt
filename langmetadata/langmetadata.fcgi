@@ -14,6 +14,7 @@
 
 # A machine readable ISO 639 file can is available at http://www.sil.org/ISO639-3/iso-639-3_Name_Index_20090210.tab
 
+use utf8;
 use strict;
 
 use FCGI;
@@ -32,22 +33,11 @@ my $scriptmode = 'cli';
 #                           Arabic, Hebrew, Latin, Old English, Turkish
 # n     name(s)             in English
 # anc   is ancient          1 true or 0 false whether it has mother tongue speakers
-# fam   language family     ISO 639-2 collective code or 'Isolate'
+# fam   language family     ISO 639-5 collective code or 'Isolate'
 #                           including 'Isolate' or 'Constructed'
 # geo   country(ies)        ISO 3166-1 only
 
 my %metadata_dtd = (
-	iso3	 => 'string',
-	iso2b	 => 'string',
-	iso2t	 => 'string',
-	iso1	 => 'string',
-	isoscope => 'string',
-	isotype	 => 'string',
-	isoname	 => 'string',
-
-    wm  => 'bool',
-
-    hw  => 'bool',
     sc  => 'soa',       # string or array of them
     wsc => 'string',
     g   => 'string',
@@ -60,14 +50,26 @@ my %metadata_dtd = (
 
     altmapfrom  => 'string',
     altmapto    => 'string',
-    altmapstrip => 'string'
+    altmapstrip => 'string',
+
+	iso3	 => 'string',
+	iso2b	 => 'string',
+	iso2t	 => 'string',
+	iso1	 => 'string',
+	isoscope => 'string',
+	isotype	 => 'string',
+	isoname	 => 'string',
+
+    wm  => 'bool',
+    hw  => 'bool',
+    nn  => 'string'
 );
 
 # generic metadata
-# TODO names could be extracted from ISO 639-3
 my $metadata = {
     aa=>{sc=>['Latn','Ethi'],n=>'Afar',fam=>'cus',geo=>['ET','ER','DJ']},
     ab=>{sc=>['Cyrl','Latn','Geor'],n=>['Abkhaz','Abkhazian'],fam=>'cau',geo=>['GE','TR']},
+    aer=>{sc=>'Latn',n=>'Eastern Arrernte',fam=>'aus',geo=>'AU'},
     af=>{sc=>'Latn',g=>'',p=>1,n=>'Afrikaans',fam=>'gem',geo=>['ZA','NA']},
     ak=>{n=>'Akan',fam=>'nic',geo=>'GH'},
     aki=>{n=>'Aiome',geo=>'PG'},
@@ -80,8 +82,11 @@ my $metadata = {
     ape=>{n=>'Bukiyip',geo=>'PG'},
     ar=>{sc=>'Arab',g=>'mf',p=>1,alt=>1,n=>'Arabic',fam=>'sem'},
     arc=>{sc=>'Hebr',g=>'mf',p=>1,n=>'Aramaic',fam=>'sem'}, # dual
+    are=>{sc=>'Latn',n=>'Western Arrernte',fam=>'aus',geo=>'AU'},
     arz=>{sc=>'Arab',g=>'mf',p=>1,alt=>1,n=>'Egyptian Arabic',fam=>'sem',geo=>'EG'},
     as=>{sc=>'Beng',n=>'Assamese',fam=>'inc',geo=>'IN'},
+    asf=>{n=>'Auslan',geo=>'AU'},
+    ase=>{n=>'ASL',geo=>'US'},
     ast=>{sc=>'Latn',g=>'mf',p=>1,n=>'Asturian',fam=>'roa',geo=>'ES'},
     av=>{sc=>'Cyrl',n=>'Avar',geo=>'RU'},
     ay=>{n=>'Aymara',geo=>['BO','CL','PE']},
@@ -93,6 +98,7 @@ my $metadata = {
     bh=>{n=>'Bihari',fam=>'inc',geo=>'IN'},
     bhb=>{sc=>'Deva',n=>'Bhili',fam=>'inc',geo=>'IN'},
     bi=>{sc=>'Latn',n=>'Bislama',fam=>'cpe',geo=>'VU'},
+    blt=>{sc=>'Tavt'},
     bm=>{sc=>['Latn','Nkoo','Arab'],n=>'Bambara',fam=>'nic',geo=>'ML'},
     bn=>{sc=>'Beng',g=>'',n=>'Bengali',fam=>'inc',geo=>['BD','IN']},
     bo=>{sc=>'Tibt',n=>'Tibetan',fam=>'sit',geo=>['CN','IN']},
@@ -110,11 +116,18 @@ my $metadata = {
     cv=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Chuvash',fam=>'tut',geo=>'RU'},
     cy=>{sc=>'Latn',g=>'mf',p=>1,n=>'Welsh',fam=>'cel',geo=>'GB'},
     da=>{sc=>'Latn',g=>'cn',p=>1,n=>'Danish',fam=>'gem',geo=>'DK'},
+    dax=>{sc=>'Latn',n=>'Dayi',fam=>'aus',geo=>'AU'},
     de=>{sc=>'Latn',g=>'mfn',p=>1,n=>'German',fam=>'gem',geo=>['DE','AT','CH']},
+    dhg=>{sc=>'Latn',n=>'Dhangu',fam=>'aus',geo=>'AU'},
+    djb=>{sc=>'Latn',n=>'Djinba',fam=>'aus',geo=>'AU'},
+    dji=>{sc=>'Latn',n=>'Djinang',fam=>'aus',geo=>'AU'},
+    djr=>{sc=>'Latn',n=>'Djambarrpuyngu',fam=>'aus',geo=>'AU'},
+    dsx=>{sc=>'Latn',n=>'Dhay\'yi',fam=>'aus',geo=>'AU'},
+    duj=>{sc=>'Latn',n=>'Dhuwal',fam=>'aus',geo=>'AU'},
     dv=>{sc=>'Thaa',p=>1,n=>'Dhivehi',fam=>'inc',geo=>'MV'},
     dz=>{sc=>'Tibt',n=>'Dzongkha',fam=>'sit',geo=>'BT'},
     el=>{sc=>'Grek',g=>'mfn',p=>1,n=>'Greek',geo=>'GR'},
-    en=>{sc=>'Latn',g=>'',p=>1,n=>'English',fam=>'gem',geo=>['AU','BZ','GB','IN','NZ','US','ZA']},
+    en=>{sc=>'Latn',g=>'',p=>1,n=>'English',fam=>'gem',geo=>['AU','BZ','CA','GB','IN','NZ','US','ZA']},
     eo=>{sc=>'Latn',g=>'',p=>1,n=>'Esperanto',fam=>'art'},
     es=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>['Spanish','Castilian'],fam=>'roa',geo=>['AR','BO','CL','CO','CR','ES','GT','HN','MX','NI','PA','PE','PY','SV','UY','VE']},
     et=>{sc=>'Latn',g=>'',p=>1,alt=>0,n=>'Estonian',fam=>'fiu',geo=>'EE'},
@@ -128,19 +141,21 @@ my $metadata = {
     fr=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'French',fam=>'roa',geo=>['FR','CH','BE']},
     fy=>{sc=>'Latn',n=>'West Frisian',fam=>'gem',geo=>'NL'},
     ga=>{sc=>'Latn',n=>'Irish',fam=>'cel',geo=>'IE'},
-    gd=>{sc=>'Latn',n=>'Scottish Gaelic'},
+    gd=>{sc=>'Latn',n=>'Scottish Gaelic',fam=>'cel',geo=>'GB'},
     gez=>{sc=>'Ethi',n=>'Geez'},
-    gl=>{sc=>'Latn',n=>'Galician',fam=>'roa',geo=>'PT'},
+    gl=>{sc=>'Latn',g=>'mf',p=>1,n=>'Galician',fam=>'roa',geo=>'ES'},
     gmy=>{sc=>'Linb',n=>'Mycenaean Greek',anc=>1},
     gn=>{n=>'Guaraní'},
+    gnn=>{sc=>'Latn',n=>'Gumatj',fam=>'aus',geo=>'AU'},
     got=>{sc=>'Goth',n=>'Gothic'},
     grc=>{sc=>'Grek',g=>'mfn',p=>1,n=>'Ancient Greek',anc=>1},
     gu=>{sc=>'Gujr',n=>'Gujarati',fam=>'inc',geo=>'IN'},
-    gv=>{n=>'Manx'},
+    guf=>{sc=>'Latn',n=>'Gupapuyngu',fam=>'aus',geo=>'AU'},
+    gv=>{n=>'Manx',fam=>'cel'},
     ha=>{n=>'Hausa'},
     har=>{sc=>'Ethi',n=>'Harari'},
     he=>{sc=>'Hebr',g=>'mf',p=>1,alt=>1,n=>'Hebrew',fam=>'sem',geo=>'IL'},
-    hi=>{sc=>'Deva',g=>'mf',p=>1,n=>'Hindi',geo=>'IN'},
+    hi=>{sc=>'Deva',g=>'mf',p=>1,n=>'Hindi',fam=>'inc',fam=>'inc',geo=>'IN'},
     hit=>{sc=>'Xsux',n=>'Hittite'},
     hr=>{sc=>'Latn',g=>'mfn',p=>1,alt=>1,n=>'Croatian',fam=>'sla',geo=>'HR'},
     hsb=>{n=>'Upper Sorbian'},
@@ -153,39 +168,47 @@ my $metadata = {
     ims=>{sc=>'Ital',n=>'Marsian'},
     io=>{n=>'Ido'},
     is=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Icelandic',fam=>'gem',geo=>'IS'},
-    it=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Italian',fam=>'roa',geo=>['IT','CH']},
+    it=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Italian',fam=>'roa',geo=>['CH','IT','SM']},
     iu=>{n=>'Inuktitut'},
 #    iw=>{sc=>'Hebr'},
     ja=>{sc=>'Jpan',g=>'',p=>0,alt=>0,n=>'Japanese',geo=>'JP'},  # kana
+    jay=>{sc=>'Latn',n=>'Yan-nhangu',fam=>'aus',geo=>'AU'},
     jbo=>{sc=>'Latn',n=>'Lojban'},
     jv=>{n=>'Javanese'},
     ka=>{sc=>'Geor',g=>'',alt=>0,n=>'Georgian',geo=>'GE'},
+    khb=>{sc=>'Talu'},
     kjh=>{sc=>'Cyrl',n=>'Khakas'},
     kk=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Kazakh',fam=>'tut',geo=>'AZ'},
     kl=>{n=>'Greenlandic'},
-    km=>{sc=>'Khmr',n=>['Khmer','Cambodian'],geo=>'KH'},
+    km=>{sc=>'Khmr',n=>['Khmer','Cambodian'],fam=>'mkh',geo=>'KH'},
     kn=>{sc=>'Knda',n=>'Kannada',fam=>'dra',geo=>'IN'},
     ko=>{sc=>'Kore',g=>'',p=>0,alt=>0,n=>'Korean',geo=>['KR','KP']},
+    krc=>{sc=>'Cyrl',g=>'',p=>1,alt=>0},
     ks=>{sc=>['Arab','Deva'],n=>'Kashmiri'},
     ku=>{sc=>'Arab',n=>'Kurdish'},
     kw=>{n=>'Cornish',fam=>'cel',geo=>'GB'},
     ky=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Kyrgyz',fam=>'tut',geo=>'KG'},
     la=>{sc=>'Latn',g=>'mfn',p=>1,alt=>1,n=>'Latin',anc=>1,fam=>'roa'},
     lez=>{sc=>'Cyrl',n=>'Lezgi'},
-    lo=>{sc=>'Laoo',g=>'',p=>0,alt=>0,n=>'Lao',geo=>'LA'},
+    lo=>{sc=>'Laoo',g=>'',p=>0,alt=>0,n=>'Lao',fam=>'tai',geo=>'LA'},
     lt=>{sc=>'Latn',g=>'mf',p=>1,alt=>1,n=>'Lithuanian',fam=>'bat',geo=>'LT'},
     lv=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Latvian',fam=>'bat',geo=>'LV'},
 #   ma=>{sc=>'Deva'},
     mi=>{sc=>'Latn',g=>0,alt=>0,n=>['Maori','Māori'],fam=>'map',geo=>'NZ'},
-    mk=>{sc=>'Cyrl',n=>'Macedonian',fam=>'sla',geo=>'MK'},
+    mk=>{sc=>'Cyrl',g=>'mfn',p=>1,n=>'Macedonian',fam=>'sla',geo=>'MK'},
     ml=>{sc=>'Mlym',g=>'',n=>'Malayalam',fam=>'dra',geo=>'IN'},
-    mn=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Mongolian',geo=>'MN'},
-    mr=>{sc=>'Deva',g=>'mfn',n=>'Marathi',geo=>'IN'},
+    mn=>{sc=>['Cyrl','Mong'],g=>'',alt=>0,n=>'Mongolian',fam=>'tut',geo=>'MN'},
+    mr=>{sc=>'Deva',g=>'mfn',n=>'Marathi',fam=>'inc',geo=>'IN'},
+    ms=>{sc=>['Latn','Arab'],n=>['Malay','Malaysian'],geo=>['MY','BN']},
     mt=>{sc=>'Latn',g=>'mf',n=>'Maltese',fam=>'sem',geo=>'MT'},
+    mwp=>{sc=>'Latn',n=>'Kala Lagaw Ya',fam=>'aus',geo=>'AU'},
+    my=>{sc=>'Mymr',n=>['Burmese','Myanmar'],fam=>'sit',geo=>'MM'},
     ne=>{sc=>'Deva',n=>'Nepali',geo=>'NP'},
     nl=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Dutch',fam=>'gem',geo=>['NL','BE']},
     nn=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Nynorsk',fam=>'gem',geo=>'NO'},
     no=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Norwegian',fam=>'gem',geo=>'NO'},
+    nys=>{n=>['Nyunga','Noongar'],fam=>'aus',geo=>'AU'},
+    oc=>{sc=>'Latn',g=>'mf',p=>1,n=>'Occitan',fam=>'roa',geo=>'FR'},
     or=>{sc=>'Orya',n=>'Oriya',fam=>'inc',geo=>'IN'},
     os=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Ossetian',geo=>'GE'},
     osc=>{sc=>'Ital',n=>'Oscan'},
@@ -194,13 +217,20 @@ my $metadata = {
     peo=>{sc=>'Xpeo',n=>'Old Persian'},
     phn=>{sc=>'Phnx',n=>'Phoenician'},
     pjt=>{sc=>'Latn',n=>'Pitjantjatjara',fam=>'aus',geo=>'AU'},
+    pka=>{fam=>'pra'},
     pl=>{sc=>'Latn',g=>'mfn',p=>1,n=>'Polish',fam=>'sla',geo=>'PL'},
+    pmh=>{fam=>'pra'},
     ps=>{sc=>'Arab',n=>['Pashto','Pushto']},
+    psu=>{fam=>'pra'},
     pt=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Portuguese',fam=>'roa',geo=>['PT','BR']},
-    ro=>{sc=>'Latn',g=>'mfn',p=>1,n=>'Romanian',fam=>'roa',geo=>'RO'},
+    rit=>{sc=>'Latn',n=>'Ritharngu',fam=>'aus',geo=>'AU'},
+    rm=>{sc=>'Latn',g=>'mf',fam=>'roa',geo=>'CH'},
+    ro=>{sc=>['Latn','Cyrl'],g=>'mfn',p=>1,n=>'Romanian',fam=>'roa',geo=>['RO','MD']},
     ru=>{sc=>'Cyrl',g=>'mfn',p=>1,alt=>1,n=>'Russian',fam=>'sla',geo=>'RU'},
     rw=>{sc=>'Latn',n=>'Kinyarwanda',fam=>'bnt',geo=>'RW'},
     sa=>{sc=>'Deva',g=>'mfn',p=>1,n=>'Sanskrit',fam=>'inc',geo=>'IN'},
+    scn=>{sc=>'Latn',g=>'mf',p=>1,n=>'Sicilian',fam=>'roa',geo=>'IT'},
+    sco=>{sc=>'Latn',fam=>'gem',geo=>'GB'},
     sd=>{sc=>'Arab',n=>'Sindhi'},
     si=>{sc=>'Sinh',n=>['Sinhala','Sinhalese'],geo=>'LK'},
     sk=>{sc=>'Latn',g=>'mfn',p=>1,n=>['Slovak','Slovakian'],fam=>'sla',geo=>'SK'},
@@ -209,15 +239,17 @@ my $metadata = {
     sq=>{sc=>'Latn',g=>'mf',alt=>0,n=>'Albanian',geo=>'AL'},
     sr=>{sc=>['Cyrl','Latn'],g=>'mfn',p=>1,n=>'Serbian',fam=>'sla',geo=>'RS'},
     sux=>{sc=>'Xsux',n=>'Sumerian'},
-    sv=>{sc=>'Latn',g=>'nc',p=>1,alt=>0,n=>'Swedish',fam=>'gem',geo=>'SE'},
+    sv=>{sc=>'Latn',g=>'cn',p=>1,alt=>0,n=>'Swedish',fam=>'gem',geo=>'SE'},
     sw=>{sc=>'Latn',g=>'',alt=>0,n=>'Swahili'},  # noun classes
     syr=>{sc=>'Syrc',n=>'Syriac'},
     ta=>{sc=>'Taml',g=>'',alt=>0,n=>'Tamil',fam=>'dra',geo=>['IN','LK']},
+    tdd=>{sc=>'Tale'},
     te=>{sc=>'Telu',g=>'',alt=>0,n=>'Telugu',fam=>'dra',geo=>'IN'},
     tg=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Tajik',fam=>'ira',geo=>'TJ'},
     th=>{sc=>'Thai',g=>'',p=>0,alt=>0,n=>'Thai',fam=>'tai',geo=>'TH'},
     ti=>{sc=>'Ethi',n=>'Tigrinya'},
     tig=>{sc=>'Ethi',n=>'Tigre'},
+    tiw=>{sc=>'Latn',n=>'Tiwi',fam=>'Isolate',geo=>'AU'},
     tk=>{sc=>'Latn',g=>'',alt=>0,n=>'Turkmen',fam=>'tut',geo=>'TM'},
     tl=>{sc=>['Latn','Tglg'],g=>'',p=>0,n=>'Tagalog',geo=>'PH'},
     tmr=>{sc=>'Hebr',n=>'Talmudic Aramaic'},
@@ -227,11 +259,14 @@ my $metadata = {
     ug=>{sc=>'Arab',n=>['Uyghur','Uighur']},
     uga=>{sc=>'Ugar',n=>'Ugaritic'},
     uk=>{sc=>'Cyrl',g=>'mfn',p=>1,n=>'Ukrainian',fam=>'sla',geo=>'UA'},
-    ur=>{sc=>'Arab',g=>'mf',p=>1,n=>'Urdu',geo=>['PK','IN']},
+    ulk=>{sc=>'Latn',n=>'Meriam',fam=>'paa',geo=>'AU'},
+    ur=>{sc=>'Arab',g=>'mf',p=>1,n=>'Urdu',fam=>'inc',geo=>['PK','IN']},
     uz=>{sc=>'Latn',g=>'',alt=>0,n=>'Uzbek',fam=>'tut',geo=>'UZ'},
     veo=>{n=>'Ventureño',geo=>'US'},
-    vi=>{sc=>'Latn',g=>'',p=>0,n=>'Vietnamese',geo=>'VN'},
+    vi=>{sc=>'Latn',g=>'',p=>0,n=>'Vietnamese',fam=>'mkh',geo=>'VN'},
+    wbp=>{sc=>'Latn',n=>'Warlpiri',fam=>'aus',geo=>'AU'},
     xae=>{sc=>'Ital',n=>'Aequian'},
+    xcl=>{sc=>'Armn',g=>'',alt=>0,n=>'Classical Armenian',anc=>1},
     xcr=>{sc=>'Cari',n=>'Carian'},
     xfa=>{sc=>'Ital',n=>'Faliscan'},
     xlc=>{sc=>'Lyci',n=>'Lycian'},
@@ -280,7 +315,7 @@ while ($isolangcontent =~ /^(\w\w\w)\t(\w\w\w)?\t(\w\w\w)?\t(\w\w)?\t(\w)\t(\w)\
 
 # WikiMedia metadata
 my $wmmetadata = {
-    'bat-smg'=>{n=>'Samogitian'},
+    'bat-smg'=>{sc=>'Latn',g=>'mf',p=>1,n=>'Samogitian',fam=>'bat',geo=>'LT'}, # dual
     'be-x-old'=>{sc=>'Cyrl',n=>'Belarusian (Tarashkevitsa)'},
     bh=>{sc=>'Deva',n=>'Bihari',fam=>'inc',geo=>'IN'},
     'cbk-zam'=>{n=>'Zamboanga Chavacano'},
@@ -300,38 +335,26 @@ my $wmmetadata = {
 };
 
 # read which language wiktionaries exist from noc.wikimedia.org
-# TODO use the sitematrix code from langcodes.pl
 # TODO native names can also be extracted from sitematrix
 
 my $wmlangcontent = get 'http://noc.wikimedia.org/conf/all.dblist';
-
-#if (defined $wmlangcontent) {
-#    while ($wmlangcontent =~ /(\w+)wiktionary/g) {
-#        my $code = $1;
-#        $code =~ tr/_/-/;
-#        $wmmetadata->{$code}{hw} = 1;
-#    }
-#}
 
 my $mw = MediaWiki::API->new();
 $mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
 
 print STDERR "getting sitematrixlang...\n";
-my $stuff = $mw->api( {
+my $json = $mw->api( {
     action => 'sitematrix' } )
     || die $mw->{error}->{code} . ': ' . $mw->{error}->{details};
 print STDERR "got sitematrixlang.\n";
 
-for (my $prefixnum = 0; 1; ++$prefixnum) {
-    last if (!exists $stuff->{sitematrix}->{$prefixnum});
+for (my $n = 0; exists $json->{sitematrix}->{$n}; ++$n) {
+    my $r = $json->{sitematrix}->{$n};
 
-    my $langcode = $stuff->{sitematrix}->{$prefixnum}->{code};
-    my $site = $stuff->{sitematrix}->{$prefixnum}->{site};
-
-    if (scalar @$site) {
-        $wmmetadata->{$langcode}{wm} = 1;
-
-        $wmmetadata->{$langcode}{hw} = 1 if (grep $_->{code} eq 'wiktionary', @$site);
+    if (scalar @{$r->{site}}) {
+        $wmmetadata->{$r->{code}}{wm} = 1;
+        $wmmetadata->{$r->{code}}{hw} = 1 if (grep $_->{code} eq 'wiktionary', @{$r->{site}});
+        $wmmetadata->{$r->{code}}{nn} = $r->{name} if ($r->{name});
     }
 }
 
@@ -347,9 +370,10 @@ my $enwiktmetadata = {
     'el-it'=>{n=>'Salentine Greek'},
     'eml-rom'=>{n=>'Romagnolo'},
     fa=>{wsc=>'fa-Arab'},
-    'fr-ca'=>{n=>'Canadian French'},
-    'fr-nng'=>{n=>'Guernésiais'},
-    'fr-nnj'=>{n=>'Jèrriais'},
+    'fr-ca'=>{n=>'Canadian French',geo=>'CA'},
+    'fr-gal'=>{n=>'Gallo',geo=>'FR'},
+    'fr-nng'=>{n=>'Guernésiais',geo=>'GG'},
+    'fr-nnj'=>{n=>'Jèrriais',geo=>'JE'},
     'fr-nnx'=>{n=>'Norman'},
     grc=>{wsc=>'polytonic'},
     he=>{altmapstrip=>'\u05B0\u05B1\u05B2\u05B3\u05B4\u05B5\u05B6\u05B7\u05B8\u05B9\u05BA\u05BB\u05BC\u05BD\u05BF\u05C1\u05C2'},
@@ -392,7 +416,7 @@ while (FCGI::accept >= 0) {
     my %opts = ('format' => 'json');
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, qw{format langs fields callback has match}); 
+    CliOrCgiOptions(\%opts, qw{format langs fields callback has match sort}); 
         
     my %langs = map { $_ => 1 } split ',', $opts{langs} if ($opts{langs});
     my %fields = map { $_ => 1 } split ',', $opts{fields} if ($opts{fields});
@@ -442,7 +466,7 @@ while (FCGI::accept >= 0) {
         }
     }
  
-    dumpresults(\%custommetadata, $opts{format}, $opts{callback});
+    dumpresults(\%custommetadata, $opts{format}, $opts{callback}, $opts{sort});
 }
 
 exit;
@@ -470,11 +494,13 @@ sub dumpresults {
     my $r = shift;
     my $format = shift;
     my $callback = shift;
+    our $sort = shift;      # XXX "my" doesn't work with fcgi!
 
     # we must output the HTTP headers to STDOUT before anything else
+	binmode(STDOUT, 'utf8');
     $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
 
-    # XXX my doesn't work for these two line with fcgi!
+    # XXX "my" doesn't work with fcgi!
     # XXX it will be right in dumpresults context but wrong in dumpresults_json!
     our $indent = 0;
     our $fmt = $format eq 'jsonfm' ? 1 : 0;
@@ -500,7 +526,7 @@ sub dumpresults {
             $fmt && print "\n";
             ++$indent;
             my $i = 0;
-            for my $h (keys %$r) {
+            for my $h ($sort ? sort keys %$r : keys %$r) {
                 $i && print ",";
                 $i++ && $fmt && print "\n";
                 my $k = $h;
@@ -521,6 +547,8 @@ sub dumpresults {
                 print $r;
             }
         } else {
+            $r =~ s/\\/\\\\/g;
+            $r =~ s/"/\\"/g;
             print '"', $r, '"';
         }
     }
