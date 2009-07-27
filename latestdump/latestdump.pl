@@ -94,7 +94,16 @@ sub latest_official {
                     },
         End => sub { $start = undef; } );
 
-    $rp->parse($xml);
+    # try
+    eval {
+        $rp->parse($xml);
+    };
+
+    # catch
+    if ($@) {
+        return undef;
+    }
+
     my $latest =  substr($latest, -8);
 
     my $dumpuri = $feeduri;
