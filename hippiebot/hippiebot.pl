@@ -332,7 +332,7 @@ sub do_dumps {
     if (@dat) {
         $resp = join(', ', map {
             /^(.*)\t(.*)\t(.*)$/;
-            $1 . ': ' . $2 . ' (' . duration($3) . ' ago)';
+            $1 . ': ' . $2 . ' (' . duration(time - $3) . ' ago)';
         } @dat);
     }
     return $resp;
