@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 # This is a simple IRC bot that knows about languages. It responds to:
-# "lang <code>", "dumps"
+# "lang <code>", "dumps", "random <language code|language name>"
 
 use warnings;
 use strict;
@@ -135,7 +135,7 @@ sub on_connect {
 # The bot has received a public message.  Parse it for commands, and
 # respond to interesting things.
 sub on_public {
-    my ( $kernel, $who, $where, $msg ) = @_[ KERNEL, ARG0, ARG1, ARG2 ];
+    my ( $kernel, $who, $where, $msg, $nickserv ) = @_[ KERNEL, ARG0, ARG1, ARG2, ARG3 ];
     my $nick = ( split /!/, $who )[0];
     my $channel = $where->[0];
 
@@ -161,6 +161,14 @@ sub on_public {
         print " [$ts] <$nick:$channel> $msg\n";
 
         my $resp = do_random($lang);
+
+        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    }
+
+    elsif ( $nick eq 'hippietrail' && $nickserv ) {
+        print " [$ts] <$nick:$channel> $msg\n";
+
+        my $resp = do_hippietrail($msg);
 
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
@@ -383,6 +391,19 @@ sub do_random {
         }
     }
     hippbotlog('random', $lang, $ok);
+
+    return $resp;
+}
+
+sub do_hippietrail {
+    my $msg = shift;
+    my $resp = undef;
+
+    if ($msg =~ /\bmy bot\b/) {
+        $resp = 'Woof!';
+    } elsif ($msg =~ /\bbad bot\b/) {
+        $resp = 'Sorry master.';
+    }
 
     return $resp;
 }
