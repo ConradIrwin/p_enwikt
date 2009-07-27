@@ -249,7 +249,6 @@ sub do_lang {
             my $eng = lang_key_to_english($l, $ref->{$l});
             if ($eng) {
                 $ok = 1;
-                print "eng '$eng'\n";
                 push @resps, $eng;
             }
         }
@@ -269,128 +268,128 @@ sub lang_key_to_english {
     my $l = shift;
     my $resp;
 
-            my %names;
+    my %names;
 
-            if (ref($l->{n}) eq 'ARRAY') {
-                foreach (@{$l->{n}}) {
-                    $names{$_} = 1;
-                }
-            } elsif ($l->{n}) {
-                $names{$l->{n}} = 1;
-            }
-            if ($l->{isoname}) {
-                $names{$l->{isoname}} = 1;
-            }
-            if ($l->{nn}) {
-                if ($l->{nn} =~ /^(.*?) ?\/ ?(.*?)$/) { # bpy/cr/cu/iu/ku/pih/sh/sr/tt/ug
-                    $names{$1} = 1;
-                    $names{$2} = 1;
-                } elsif ($l->{nn} =~ /^(.*?) - \((.*?)\)$/) { # ks
-                    $names{$1} = 1;
-                    $names{$2} = 1;
+    if (ref($l->{n}) eq 'ARRAY') {
+        foreach (@{$l->{n}}) {
+            $names{$_} = 1;
+        }
+    } elsif ($l->{n}) {
+        $names{$l->{n}} = 1;
+    }
+    if ($l->{isoname}) {
+        $names{$l->{isoname}} = 1;
+    }
+    if ($l->{nn}) {
+        if ($l->{nn} =~ /^(.*?) ?\/ ?(.*?)$/) { # bpy/cr/cu/iu/ku/pih/sh/sr/tt/ug
+            $names{$1} = 1;
+            $names{$2} = 1;
+        } elsif ($l->{nn} =~ /^(.*?) - \((.*?)\)$/) { # ks
+            $names{$1} = 1;
+            $names{$2} = 1;
+        } else {
+            $names{$l->{nn}} = 1;
+        }
+    }
+    #if (exists $enwikt{$outcode}) {
+    #    $names{$enwikt{$outcode}} = 1;
+    #}
+
+    if (scalar keys %names) {
+        $resp = $incode;
+
+    #    if ($incode ne $outcode) {
+    #        $resp .= ', ' . $outcode;
+    #    } elsif (exists $l->{iso3}) {
+        if (exists $l->{iso3}) {
+            $resp .= ', ' . $l->{iso3};
+        }
+        $resp .= ': '. join '; ', keys %names;
+
+        if (exists $l->{fam} || exists $l->{geo}) {
+            $resp .= ', a';
+            if (exists $l->{fam}) {
+                my $famcode = $l->{fam};
+                my $famname = $fam{$famcode};
+                $famname = '"' . $famcode . '"' unless ($famname);
+                if ($famcode eq 'Isolate') {
+                    $resp .= ' language isolate';
                 } else {
-                    $names{$l->{nn}} = 1;
+                    $resp .= 'n' if ($famname =~ /^[aeiouAEIUO]/);
+                    $resp .= ' ' . $famname;
+                    $resp .= ' language';
+                }
+            } else {
+                $resp .= ' language';
+            }
+
+            if (exists $l->{geo}) {
+                $resp .= ' of ';
+                if (ref($l->{geo}) eq 'ARRAY') {
+                    my $n = scalar @{$l->{geo}};
+                    $resp .= join ', ', @{$l->{geo}}[0 .. $n-2];
+                    $resp .= ' and ' . $l->{geo}->[-1];
+                } else {
+                    $resp .= $l->{geo};
                 }
             }
-            #if (exists $enwikt{$outcode}) {
-            #    $names{$enwikt{$outcode}} = 1;
-            #}
+        }
+        $resp .= '.';
 
-            if (scalar keys %names) {
-                $resp = $incode;
+        $resp .= ' ';
+        if (exists $l->{isoscope}) {
+            $resp .= 'It\'s in ISO';
+        } elsif (exists $l->{wm}) {
+            $resp .= 'It\'s a WikiMedi extension to ISO';
+        } else {
+            $resp .= 'It\'s an en.wiktionary extension to ISO';
+        }
+        if (exists $l->{hw}) {
+            $resp .= ' and has its own Wiktionary';
+        }
+        $resp .= '.';
 
-            #    if ($incode ne $outcode) {
-            #        $resp .= ', ' . $outcode;
-            #    } elsif (exists $l->{iso3}) {
-                if (exists $l->{iso3}) {
-                    $resp .= ', ' . $l->{iso3};
-                }
-                $resp .= ': '. join '; ', keys %names;
-
-                if (exists $l->{fam} || exists $l->{geo}) {
-                    $resp .= ', a';
-                    if (exists $l->{fam}) {
-                        my $famcode = $l->{fam};
-                        my $famname = $fam{$famcode};
-                        $famname = '"' . $famcode . '"' unless ($famname);
-                        if ($famcode eq 'Isolate') {
-                            $resp .= ' language isolate';
-                        } else {
-                            $resp .= 'n' if ($famname =~ /^[aeiouAEIUO]/);
-                            $resp .= ' ' . $famname;
-                            $resp .= ' language';
-                        }
-                    } else {
-                        $resp .= ' language';
-                    }
-
-                    if (exists $l->{geo}) {
-                        $resp .= ' of ';
-                        if (ref($l->{geo}) eq 'ARRAY') {
-                            my $n = scalar @{$l->{geo}};
-                            $resp .= join ', ', @{$l->{geo}}[0 .. $n-2];
-                            $resp .= ' and ' . $l->{geo}->[-1];
-                        } else {
-                            $resp .= $l->{geo};
-                        }
-                    }
-                }
-                $resp .= '.';
-
+        if (exists $l->{sc} || exists $l->{wsc}) {
+            $resp .= ' It';
+            if (exists $l->{sc}) {
                 $resp .= ' ';
-                if (exists $l->{isoscope}) {
-                    $resp .= 'It\'s in ISO';
-                } elsif (exists $l->{wm}) {
-                    $resp .= 'It\'s a WikiMedi extension to ISO';
+                $resp .= '\'s written in the ';
+                my $n = 1;
+                if (ref($l->{sc}) eq 'ARRAY') {
+                    $n = scalar @{$l->{sc}};
+                    $resp .= join ', ', @{$l->{sc}}[0 .. $n-2];
+                    $resp .= ' or ' . $l->{sc}->[-1];
                 } else {
-                    $resp .= 'It\'s an en.wiktionary extension to ISO';
+                    $resp .= $l->{sc};
                 }
-                if (exists $l->{hw}) {
-                    $resp .= ' and has its own Wiktionary';
-                }
-                $resp .= '.';
+                $resp .= ' script';
+                $resp .= 's' if ($n > 1);
 
-                if (exists $l->{sc} || exists $l->{wsc}) {
-                    $resp .= ' It';
-                    if (exists $l->{sc}) {
-                        $resp .= ' ';
-                        $resp .= '\'s written in the ';
-                        my $n = 1;
-                        if (ref($l->{sc}) eq 'ARRAY') {
-                            $n = scalar @{$l->{sc}};
-                            $resp .= join ', ', @{$l->{sc}}[0 .. $n-2];
-                            $resp .= ' or ' . $l->{sc}->[-1];
-                        } else {
-                            $resp .= $l->{sc};
-                        }
-                        $resp .= ' script';
-                        $resp .= 's' if ($n > 1);
-
-                        $resp .= ' but' if (exists $l->{wsc});
-                    }
-                    if (exists $l->{wsc}) {
-                        $resp .= ' uses the "' . $l->{wsc} . '" script template';
-                    }
-                    $resp .= '.';
-                }
-
-                if (exists $l->{g}) {
-                    $resp .= ' ';
-                    $resp .= 'Nouns ';
-                    if ($l->{g}) {
-                        $resp .= 'can be ';
-                        my %g = (m=>'masculine',f=>'feminine',n=>'neuter',c=>'common');
-                        my @g = map $g{$_}, split(//, $l->{g});
-                        my $n = scalar @g;
-                        $resp .= join ', ', @g[0 .. $n-2];
-                        $resp .= ' or ' . $g[-1];
-                    } else {
-                        $resp .= 'don\'t have';
-                    }
-                    $resp .= ' gender';
-                    $resp .= '.';
-                }
+                $resp .= ' but' if (exists $l->{wsc});
             }
+            if (exists $l->{wsc}) {
+                $resp .= ' uses the "' . $l->{wsc} . '" script template';
+            }
+            $resp .= '.';
+        }
+
+        if (exists $l->{g}) {
+            $resp .= ' ';
+            $resp .= 'Nouns ';
+            if ($l->{g}) {
+                $resp .= 'can be ';
+                my %g = (m=>'masculine',f=>'feminine',n=>'neuter',c=>'common');
+                my @g = map $g{$_}, split(//, $l->{g});
+                my $n = scalar @g;
+                $resp .= join ', ', @g[0 .. $n-2];
+                $resp .= ' or ' . $g[-1];
+            } else {
+                $resp .= 'don\'t have';
+            }
+            $resp .= ' gender';
+            $resp .= '.';
+        }
+    }
     return $resp;
 }
 
@@ -428,7 +427,9 @@ sub do_random {
         $ok = 1;
         $location =~ /\/wiki\/(.*)\?rndlangcached=(\w+)#(.*)$/;
 
-        my ($word, $iscached, $langname) = (uri_unescape($1), $2 eq 'yes', $3);
+        my ($word, $iscached, $langname) = ($1, $2 eq 'yes', $3);
+        $word = uri_unescape($word);
+        utf8::decode($word);
         $langname =~ s/_/ /g;
 
         $resp = "How about the nice $langname word [[$word]] ";
