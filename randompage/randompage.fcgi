@@ -9,11 +9,15 @@ use CGI;
 use CGI::Util;
 use FCGI;
 use Getopt::Long;
+use MediaWiki::API;
 
 my $scriptmode = 'cli';
 
 # initialize
 my %cache;
+
+my $mw = MediaWiki::API->new();
+$mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
 
 # FastCGI loop
 
@@ -21,7 +25,7 @@ while (FCGI::accept >= 0) {
     my %opts = ('langname' => 'English');                    
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, qw{langname langs}); 
+    CliOrCgiOptions(\%opts, qw{langname langcode langs}); 
         
     # process this request
 
@@ -45,8 +49,30 @@ while (FCGI::accept >= 0) {
         } 
         print "</ul></td></tr></table>";
         print $q->end_html;
-    } elsif (!$opts{langname}) {
-        dumperr("no language name specified");
+    } elsif (exists $opts{langcode}) {
+        $opts{langname} = '';
+        my $json;
+        my $ok = 0;
+        if ($json = $mw->api( { action => 'expandtemplates',
+                                text   => '{{' . $opts{langcode} . '}}' } )) {
+            my $et = $json->{expandtemplates}->{'*'};
+            $et =~ /^([^:]+): /g;
+            my $c = $1;
+            if ($et =~ /\G(?:(?:\[\[)?([^];]*)(?:]])?(?: \((.*)\))?)$/s) {
+                if ($1 && $1 !~ /[[|<*]/s && $1 ne "\n") {  # catch false positives
+                    if (index($1, ':Template:') == -1) {
+                        $ok = 1;
+                    }
+                }
+            }
+            if ($ok) {
+                $opts{langname} = $2 ? $1 . ' (' . $2 . ')' : $1;
+            }
+        }
+    }
+    if (!$opts{langname}) {
+        dumperr(exists $opts{langcode} ? 'can\'t find language for code'
+                                       : 'no language name specified');
     } elsif (open(FILE, "/home/hippietrail/buxxo/$opts{langname}.txt")) {
         my $iscached;
         my $words;
@@ -108,8 +134,10 @@ sub dumpresults {
 
     my $url = 'http://en.wiktionary.org/wiki/' . $word;
 
+    my $ln = $langname;
+    $ln =~ s/ /_/g;
     $url .= '?rndlangcached=' . ($iscached ? 'yes' : 'no');
-    $url .= '#' . $langname;
+    $url .= '#' . $ln;
 
     if ($scriptmode eq 'cgi') {
         print CGI->new->redirect(-uri=>$url, -status=>303);
