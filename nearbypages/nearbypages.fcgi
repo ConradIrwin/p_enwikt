@@ -80,9 +80,9 @@ while (FCGI::accept >= 0) {
     my $locale = '';
 
     if (!exists $opts{langname}) {
-        $cli_retval = dumperror(1, 'no language name specified');
+        $cli_retval = dumperror(1, 'no language name specified', $opts{callback});
     } elsif (!exists $opts{term}) {
-        $cli_retval = dumperror(1, 'no term specified');
+        $cli_retval = dumperror(1, 'no term specified', $opts{callback});
     } else {
         $langname = $opts{langname};
         $inputterm = $opts{term};
@@ -92,7 +92,8 @@ while (FCGI::accept >= 0) {
         while (my ($k, $v) = each %langcodes) {
             if ($v->{enwiktname} eq $langname) {
                 $key = $k;
-                last;
+                # TODO if we use last with each, each won't start from the beginning next time!
+                #last;
             }
         }
         # normally we use the language code as the hash key
@@ -112,7 +113,7 @@ while (FCGI::accept >= 0) {
             $iscached = 0;
             $langcodes{$key}->{words} = $words;
         } else {
-            $cli_retval = dumperror(1, "couldn't open word file for '$langname'");
+            $cli_retval = dumperror(1, "couldn't open word file for '$langname'", $opts{callback});
         }
     }
 
@@ -148,20 +149,35 @@ sub slurpsort {
     my $retval;
     my $name = shift;
 
-    my $filename = $name eq '*'
-        ? '/mnt/user-store/enlatest-all.txt'
-        : "/home/hippietrail/buxxo/$name.txt";
+    if ($name ne '_Special') {
+        my $filename = $name eq '*'
+            ? '/mnt/user-store/enlatest-all.txt'
+            : "/home/hippietrail/buxxo/$name.txt";
 
-    if (open(FILE, "<:utf8", $filename)) {
-        my @unsorted = <FILE>;
-        close(FILE);
+        if (open(FILE, "<:utf8", $filename)) {
+            my @unsorted = <FILE>;
+            close(FILE);
 
-        chop @unsorted;
+            chop @unsorted;
 
+            my @sorted = sort @unsorted;
+            $retval = \@sorted;
+        } else {
+            #print STDERR "can't find '$name.txt'\n";
+        }
+    } else {
+        my $stuff = $mw->api( {
+            action => 'query',
+            meta => 'siteinfo',
+            siprop => 'specialpagealiases'
+        } ) || die $mw->{error}->{code} . ': ' . $mw->{error}->{details};
+
+        my @unsorted;
+        foreach my $sp (@{$stuff->{query}->{specialpagealiases}}) {
+            push @unsorted, $sp->{aliases}->[0];
+        }
         my @sorted = sort @unsorted;
         $retval = \@sorted;
-    } else {
-        #print STDERR "can't find '$name.txt'\n";
     }
 
     return $retval;
@@ -282,7 +298,7 @@ sub dumpresults {
 }
 
 sub dumperror {
-    dumpresults( { error => { code => shift, info => shift} } );
+    dumpresults( { error => { code => shift, info => shift} }, 'json', shift );
 
     return -1; # cli failure
 }
