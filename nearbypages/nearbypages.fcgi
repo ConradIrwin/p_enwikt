@@ -25,6 +25,9 @@ my $cli_retval = -1; # fail by default
 my $mw = MediaWiki::API->new();
 $mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
 
+# TODO it would be better to choose one from the list. this could change.
+my $default_locale = 'en_US.utf8';
+
 # which language codes do we have locale support for?
 my %langcodes;
 my @locales = `locale -a`;
@@ -89,12 +92,7 @@ while (FCGI::accept >= 0) {
         while (my ($k, $v) = each %langcodes) {
             if ($v->{enwiktname} eq $langname) {
                 $key = $k;
-                $locale = $v->{locale};
-                if (exists $v->{locale}) {
-                    # TODO currently we will use the previous order when
-                    # TODO we lack locale support for the current language
-                    setlocale(LC_COLLATE, $v->{locale});
-                }
+                last;
             }
         }
         # normally we use the language code as the hash key
@@ -104,10 +102,13 @@ while (FCGI::accept >= 0) {
         # we have no language code
         $key = $langname unless (defined $key);
 
+        $locale = exists $langcodes{$key}->{locale} ? $langcodes{$key}->{locale} : $default_locale;
+        setlocale(LC_COLLATE, $locale);
+
         if (exists $langcodes{$key}->{words}) {
             $iscached = 1;
             $words = $langcodes{$key}->{words};
-        } elsif ($words = slurpsort($langname, $langcodes{$key}->{locale})) {
+        } elsif ($words = slurpsort($langname)) {
             $iscached = 0;
             $langcodes{$key}->{words} = $words;
         } else {
@@ -116,18 +117,12 @@ while (FCGI::accept >= 0) {
     }
 
     if ($words) {
-        my $r = bsearch($locale, $inputterm, $words);
+        my $r = bsearch($inputterm, $words);
 
-        my $w = '';
-        for (my $o = 0; $o < 3; ++$o) {
-            my $i = defined $r->[$o] ? $r->[$o] : undef;
-            if (defined $i) {
-                $w .= ($o-1). ' '. $i. ' '. $words->[$i]. "\n";
-            }
-        }
-        my $prev = $words->[$r->[0]];
-        my $exists = defined $r->[1];
-        my $next = $words->[$r->[2]];
+        my ($prev, $exists, $next);
+        $prev = $words->[$r->[0]] if defined $r->[0];
+        $exists = defined $r->[1];
+        $next = $words->[$r->[2]] if defined $r->[2];
 
         dumpresults(
             {
@@ -152,7 +147,6 @@ exit $cli_retval;
 sub slurpsort {
     my $retval;
     my $name = shift;
-    my $locale = shift;
 
     my $filename = $name eq '*'
         ? '/mnt/user-store/enlatest-all.txt'
@@ -164,7 +158,6 @@ sub slurpsort {
 
         chop @unsorted;
 
-        setlocale(LC_COLLATE, $locale) if ($locale);
         my @sorted = sort @unsorted;
         $retval = \@sorted;
     } else {
@@ -175,11 +168,10 @@ sub slurpsort {
 }
 
 sub bsearch {
-    my ($locale, $x, $a) = @_;            # search for x in array a
+    my ($x, $a) = @_;            # search for x in array a
     my ($l, $u) = (0, @$a - 1);  # lower, upper end of search interval
     my $i;                       # index of probe
-
-    setlocale(LC_COLLATE, $locale) if ($locale);
+    my $r = undef;
 
     while ($l <= $u) {
         $i = int(($l + $u)/2);
@@ -191,11 +183,17 @@ sub bsearch {
             $u = $i-1;
         } 
         else {
-            return [$i-1, $i, $i+1]; # found
+            $r = [$i-1, $i, $i+1]; # found
+            last;
         }
     }
 
-    return [$l-1, undef, $l];         # not found
+    $r = [$l-1, undef, $l] unless defined $r;         # not found
+
+    $r->[0] = undef if $r->[0] < 0;
+    $r->[2] = undef if $r->[2] >= scalar @$a;
+
+    return $r;
 }
 
 ##########################################
@@ -275,6 +273,8 @@ sub dumpresults {
                 print $r;
             #}
         } else {
+            $r =~ s/\\/\\\\/g;
+            $r =~ s/"/\\"/g;
             print '"', $r, '"';
         }
     }
