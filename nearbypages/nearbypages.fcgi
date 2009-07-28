@@ -55,7 +55,7 @@ foreach (@pairs) {
         $langcodes{$c}->{enwiktname} = $langname;
         $langcodes{$c}->{hasfile} = -e "/home/hippietrail/buxxo/$langname.txt";
     } else {
-        print STDERR "language code template rejected: '$c'\n";
+        #print STDERR "language code template rejected: '$c'\n";
     }
 }
 #use Data::Dumper; print Dumper \%langcodes;
@@ -66,7 +66,7 @@ while (FCGI::accept >= 0) {
     my %opts = ('langname' => 'English');                    
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, qw{langname term}); 
+    CliOrCgiOptions(\%opts, qw{langname term callback}); 
         
     # process this request
 
@@ -77,9 +77,9 @@ while (FCGI::accept >= 0) {
     my $locale = '';
 
     if (!exists $opts{langname}) {
-        $cli_retval = dumperr('no language name specified');
+        $cli_retval = dumperror(1, 'no language name specified');
     } elsif (!exists $opts{term}) {
-        $cli_retval = dumperr('no term specified');
+        $cli_retval = dumperror(1, 'no term specified');
     } else {
         $langname = $opts{langname};
         $inputterm = $opts{term};
@@ -91,13 +91,14 @@ while (FCGI::accept >= 0) {
                 $key = $k;
                 $locale = $v->{locale};
                 if (exists $v->{locale}) {
+                    # TODO currently we will use the previous order when
+                    # TODO we lack locale support for the current language
                     setlocale(LC_COLLATE, $v->{locale});
-                    print STDERR "locale set to '$v->{locale}'\n";
                 }
             }
         }
         # normally we use the language code as the hash key
-        # since the local is keyed off the language code
+        # since the locale is keyed off the language code
         # but if we can find no language code we use the langauge name
         # as the hash key. This allows us to cache langauges for which
         # we have no language code
@@ -110,7 +111,7 @@ while (FCGI::accept >= 0) {
             $iscached = 0;
             $langcodes{$key}->{words} = $words;
         } else {
-            $cli_retval = dumperr("couldn't open word file for '$langname'");
+            $cli_retval = dumperror(1, "couldn't open word file for '$langname'");
         }
     }
 
@@ -128,7 +129,19 @@ while (FCGI::accept >= 0) {
         my $exists = defined $r->[1];
         my $next = $words->[$r->[2]];
 
-        $cli_retval = dumpresults($langname, $iscached, $inputterm, $prev, $exists, $next);
+        dumpresults(
+            {
+                langname    => $langname,
+                locale      => $locale,
+                iscached    => $iscached,
+                inputterm   => $inputterm,
+                prev        => $prev,
+                exists      => $exists,
+                next        => $next
+            },
+            'json', $opts{callback}
+        );
+        $cli_retval = 0;
     }
 }
 
@@ -137,11 +150,15 @@ exit $cli_retval;
 ##########################################
 
 sub slurpsort {
-    my $name = shift;
-    my $locale;
     my $retval;
+    my $name = shift;
+    my $locale = shift;
 
-    if (open(FILE, "<:utf8", "/home/hippietrail/buxxo/$name.txt")) {
+    my $filename = $name eq '*'
+        ? '/mnt/user-store/enlatest-all.txt'
+        : "/home/hippietrail/buxxo/$name.txt";
+
+    if (open(FILE, "<:utf8", $filename)) {
         my @unsorted = <FILE>;
         close(FILE);
 
@@ -151,7 +168,7 @@ sub slurpsort {
         my @sorted = sort @unsorted;
         $retval = \@sorted;
     } else {
-        print STDERR "can't find '$name.txt'\n";
+        #print STDERR "can't find '$name.txt'\n";
     }
 
     return $retval;
@@ -202,36 +219,71 @@ sub CliOrCgiOptions {
 }
 
 sub dumpresults {
-    my $langname = shift;
-    my $iscached = shift;
-    my $inputword = shift;
-    my $prev = shift;
-    my $exists = shift;
-    my $next = shift;
+    my $r = shift;
+    my $format = shift;
+    my $callback = shift;
+    our $sort = shift;      # XXX "my" doesn't work with fcgi!
 
     # we must output the HTTP headers to STDOUT before anything else
+	binmode(STDOUT, 'utf8');
     $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
 
-    print "{\n";
-    print "\t\"langname\": \"$langname\",\n";
-    print "\t\"iscached\": \"$iscached\",\n";
-    print "\t\"inputterm\": \"$inputword\",\n";
-    print "\t\"prev\": \"$prev\",\n";
-    print "\t\"exists\": \"$exists\",\n";
-    print "\t\"next\": \"$next\",\n";
-    print "}\n";
+    # XXX "my" doesn't work with fcgi!
+    # XXX it will be right in dumpresults context but wrong in dumpresults_json!
+    our $indent = 0;
+    our $fmt = $format eq 'jsonfm' ? 1 : 0;
 
+    $callback && print $callback, '(';
+    dumpresults_json($r);
+    $callback && print ')';
+
+    sub dumpresults_json {
+        my $r = shift;
+        my $lhs = shift;
+
+        if (ref($r) eq 'ARRAY') {
+            print '[';
+            for (my $i = 0; $i < scalar @$r; ++$i) {
+                $i && print ',';
+                $i && $fmt && print ' ';
+                dumpresults_json($r->[$i]);
+            }
+            print ']';
+        } elsif (ref($r) eq 'HASH') {
+            print "{";
+            $fmt && print "\n";
+            ++$indent;
+            my $i = 0;
+            for my $h ($sort ? sort keys %$r : keys %$r) {
+                $i && print ",";
+                $i++ && $fmt && print "\n";
+                my $k = $h;
+                unless ($h =~ /^[a-z]+$/) {
+                    $k = '"' . $h . '"';
+                }
+                $fmt && print '  ' x $indent;
+                print $k, ':';
+                $fmt && print ' ';
+                dumpresults_json($r->{$h}, $h);
+            }
+            $fmt && print "\n", '  ' x --$indent;
+            print '}';
+        } elsif ($r =~ /^-?\d+$/) {
+            #if ($metadata_dtd{$lhs} eq 'bool') {
+            #    print $r ? 'true' : 'false';
+            #} else {
+                print $r;
+            #}
+        } else {
+            print '"', $r, '"';
+        }
+    }
     return 0; # cli success
 }
 
-sub dumperr {
-    my $err = shift;
-
-    # we must output the HTTP headers to STDOUT before anything else
-    $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
-
-    # do output
-    print "** ERROR: $err\n";
+sub dumperror {
+    dumpresults( { error => { code => shift, info => shift} } );
 
     return -1; # cli failure
 }
+
