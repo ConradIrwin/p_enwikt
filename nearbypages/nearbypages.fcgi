@@ -69,12 +69,14 @@ while (FCGI::accept >= 0) {
     my %opts = ('langname' => 'English');                    
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, qw{langname term callback}); 
+    CliOrCgiOptions(\%opts, qw{langname term num numprev numnext callback}); 
         
     # process this request
 
     my $langname = '';
     my $inputterm = '';
+    my $numprev = 0;
+    my $numnext = 0;
     my $iscached = 0;
     my $words = undef;
     my $locale = '';
@@ -83,9 +85,17 @@ while (FCGI::accept >= 0) {
         $cli_retval = dumperror(1, 'no language name specified', $opts{callback});
     } elsif (!exists $opts{term}) {
         $cli_retval = dumperror(1, 'no term specified', $opts{callback});
+    } elsif (exists $opts{num} && (exists $opts{numprev} || exists $opts{numnext})) {
+        $cli_retval = dumperror(1, 'num cannot be used with numprev or numnext', $opts{callback});
     } else {
         $langname = $opts{langname};
         $inputterm = $opts{term};
+        if (defined $opts{numprev} || defined $opts{numnext}) {
+            $numprev = $opts{numprev} if defined $opts{numprev};
+            $numnext = $opts{numnext} if defined $opts{numnext};
+        } else {
+            $numprev = $numnext = defined $opts{num} ? $opts{num} : 1;
+        }
 
         # see if we have a locale for this language
         my $key = undef;
@@ -118,25 +128,41 @@ while (FCGI::accept >= 0) {
     }
 
     if ($words) {
-        my $r = bsearch($inputterm, $words);
+        my ($prev, $next) = bsearch($inputterm, $words);
 
-        my ($prev, $exists, $next);
-        $prev = $words->[$r->[0]] if defined $r->[0];
-        $exists = defined $r->[1];
-        $next = $words->[$r->[2]] if defined $r->[2];
+        my (@prevs, $exists, @nexts);
 
-        dumpresults(
-            {
-                langname    => $langname,
-                locale      => $locale,
-                iscached    => $iscached,
-                inputterm   => $inputterm,
-                prev        => $prev,
-                exists      => $exists,
-                next        => $next
-            },
-            'json', $opts{callback}
-        );
+        my ($a, $b);
+        my ($c, $d);
+
+        $a = $prev - $numprev + 1;
+        $b = $a + $numprev;
+
+        if ($a < 0) {
+            $b += $a;
+            $a = 0;
+        }
+
+        $c = $next;
+        $d = $next + $numnext;
+
+        if ($d > scalar @$words) {
+            $d -= $d - scalar @$words;
+        }
+
+        my $results = {
+            langname    => $langname,
+            locale      => $locale,
+            iscached    => $iscached,
+            inputterm   => $inputterm,
+            exists      => $next - $prev == 2
+        };
+
+        $results->{prev} = [@$words[$a .. $b-1]] if $a != $b;
+        $results->{next} = [@$words[$c .. $d-1]] if $c != $d;
+
+        dumpresults($results, 'json', $opts{callback});
+
         $cli_retval = 0;
     }
 }
@@ -199,17 +225,14 @@ sub bsearch {
             $u = $i-1;
         } 
         else {
-            $r = [$i-1, $i, $i+1]; # found
+            $r = [$i-1, $i+1]; # found
             last;
         }
     }
 
-    $r = [$l-1, undef, $l] unless defined $r;         # not found
+    $r = [$l-1, $l] unless defined $r; # not found
 
-    $r->[0] = undef if $r->[0] < 0;
-    $r->[2] = undef if $r->[2] >= scalar @$a;
-
-    return $r;
+    return @$r;
 }
 
 ##########################################
