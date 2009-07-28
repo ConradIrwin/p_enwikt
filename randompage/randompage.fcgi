@@ -29,9 +29,14 @@ while (FCGI::accept >= 0) {
     my %opts = ('langname' => 'English');                    
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, qw{langname langcode langs}); 
+    CliOrCgiOptions(\%opts, qw{dumpsource langname langcode langs}); 
         
     # process this request
+
+    if (exists $opts{dumpsource}) {
+        $cli_retval = dumpsource();
+        next;
+    }
 
     if (exists $opts{langs}) {
         my $q = CGI->new;
@@ -170,4 +175,24 @@ sub dumperr {
     print "** ERROR: $err\n";
 
     return -1; # cli failure
+}
+
+sub dumpsource {
+    my $retval = -1;
+    my $path = $scriptmode eq 'cgi' ? $0 : "/home/hippietrail/$0";
+
+    # we must output the HTTP headers to STDOUT before anything else
+    $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
+
+    if (open(SRC, $path)) {
+        while (<SRC>) {
+            print;
+        }
+        close SRC;
+        $retval = 0; # cli success
+    } else {
+        print "couldn't open $path\n"
+    }
+
+    return $retval;
 }
