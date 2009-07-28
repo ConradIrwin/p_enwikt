@@ -105,14 +105,16 @@ while (FCGI::accept >= 0) {
 
         my $numwords = scalar @$words;
         my $r = int(rand($numwords));
-        my $w = $words->[$r];
-        chomp $w;
+        my $title = $words->[$r];
+        chomp $title;
 
         if (substr($opts{langname}, 0, 1) eq '_') {
-            $w = substr($opts{langname}, 1) . ':' . $w;
+            if ($opts{langname} ne '_Redirect' && substr($opts{langname}, 0, 10) ne '_Category:') {
+                $title = substr($opts{langname}, 1) . ':' . $title;
+            }
         }
 
-        $cli_retval = dumpresults($opts{langname}, $w, $iscached);
+        $cli_retval = dumpresults($opts{langname}, $title, $iscached);
     } else {
         $cli_retval = dumperr("couldn't open word file for '$opts{langname}'");
     }
@@ -146,10 +148,12 @@ sub dumpresults {
 
     my $url = 'http://en.wiktionary.org/wiki/' . uri_escape_utf8($word);
 
-    my $ln = $langname;
-    $ln =~ s/ /_/g;
     $url .= '?rndlangcached=' . ($iscached ? 'yes' : 'no');
-    $url .= '#' . $ln;
+    if (substr($langname, 0, 1) ne '_') {
+        my $ln = $langname;
+        $ln =~ s/ /_/g;
+        $url .= '#' . $ln;
+    }
 
     if ($scriptmode eq 'cgi') {
         print CGI->new->redirect(-uri=>$url, -status=>303);
