@@ -69,7 +69,7 @@ while (FCGI::accept >= 0) {
     my %opts = ('langname' => 'English');                    
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, qw{langname term num numprev numnext callback}); 
+    CliOrCgiOptions(\%opts, qw{dumpsource langname term num numprev numnext callback}); 
         
     # process this request
 
@@ -80,6 +80,11 @@ while (FCGI::accept >= 0) {
     my $iscached = 0;
     my $words = undef;
     my $locale = '';
+
+    if (exists $opts{dumpsource}) {
+        $cli_retval = dumpsource();
+        next;
+    }
 
     if (!exists $opts{langname}) {
         $cli_retval = dumperror(1, 'no language name specified', $opts{callback});
@@ -305,7 +310,8 @@ sub dumpresults {
             }
             $fmt && print "\n", '  ' x --$indent;
             print '}';
-        } elsif ($r =~ /^-?\d+$/) {
+        # XXX don't use \d here or foreign digits will be unquoted
+        } elsif ($r =~ /^-?[0-9]+$/) {
             #if ($metadata_dtd{$lhs} eq 'bool') {
             #    print $r ? 'true' : 'false';
             #} else {
@@ -326,3 +332,22 @@ sub dumperror {
     return -1; # cli failure
 }
 
+sub dumpsource {
+    my $retval = -1;
+    my $path = $scriptmode eq 'cgi' ? $0 : "/home/hippietrail/$0";
+
+    # we must output the HTTP headers to STDOUT before anything else
+    $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
+
+    if (open(SRC, $path)) {
+        while (<SRC>) {
+            print;
+        }
+        close SRC;
+        $retval = 0; # cli success
+    } else {
+        print "couldn't open $path\n"
+    }
+
+    return $retval;
+}
