@@ -6,10 +6,11 @@ use utf8;
 use strict;
 
 use CGI;
-use CGI::Util;
+#use CGI::Util;
 use FCGI;
 use Getopt::Long;
 use MediaWiki::API;
+use URI::Escape;
 
 my $scriptmode = 'cli';
 
@@ -118,7 +119,7 @@ sub CliOrCgiOptions {
         my %q = map { split('=') } split('&', $ENV{'QUERY_STRING'});
 
         foreach my $o (@optnames) {
-            $opts->{$o} = CGI::Util::unescape($q{$o}) if (exists $q{$o});
+            $opts->{$o} = uri_unescape($q{$o}) if (exists $q{$o});
         }
     } else {
         GetOptions($opts, map { $_ . '=s', } @optnames);
@@ -132,7 +133,7 @@ sub dumpresults {
 
 	binmode(STDOUT, 'utf8');
 
-    my $url = 'http://en.wiktionary.org/wiki/' . $word;
+    my $url = 'http://en.wiktionary.org/wiki/' . uri_escape($word);
 
     my $ln = $langname;
     $ln =~ s/ /_/g;
