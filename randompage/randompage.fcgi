@@ -103,6 +103,10 @@ while (FCGI::accept >= 0) {
         my $w = $words->[$r];
         chomp $w;
 
+        if (substr($opts{langname}, 0, 1) eq '_') {
+            $w = substr($opts{langname}, 1) . ':' . $w;
+        }
+
         $cli_retval = dumpresults($opts{langname}, $w, $iscached);
     } else {
         $cli_retval = dumperr("couldn't open word file for '$opts{langname}'");
