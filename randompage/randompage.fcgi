@@ -6,15 +6,18 @@ use utf8;
 use strict;
 
 use CGI;
-#use CGI::Util;
 use FCGI;
 use Getopt::Long;
 use MediaWiki::API;
 use URI::Escape;
 
+binmode STDOUT, ':utf8';
+
 my $scriptmode = 'cli';
 
 # initialize
+my $cli_retval = -1; # fail by default
+
 my %cache;
 
 my $mw = MediaWiki::API->new();
@@ -72,9 +75,10 @@ while (FCGI::accept >= 0) {
         }
     }
     if (!$opts{langname}) {
-        dumperr(exists $opts{langcode} ? 'can\'t find language for code'
+        $cli_retval = dumperr(exists $opts{langcode} ? 'can\'t find language for code'
                                        : 'no language name specified');
-    } elsif (open(FILE, "/home/hippietrail/buxxo/$opts{langname}.txt")) {
+    } elsif (open(FILE, "<:utf8", "/home/hippietrail/buxxo/$opts{langname}.txt")) {
+            # FILE, "<:utf8", $fname 
         my $iscached;
         my $words;
 
@@ -99,13 +103,13 @@ while (FCGI::accept >= 0) {
         my $w = $words->[$r];
         chomp $w;
 
-        dumpresults($opts{langname}, $w, $iscached);
+        $cli_retval = dumpresults($opts{langname}, $w, $iscached);
     } else {
-        dumperr("couldn't open word file for '$opts{langname}'");
+        $cli_retval = dumperr("couldn't open word file for '$opts{langname}'");
     }
 }
 
-exit;
+exit $cli_retval;
 
 ##########################################
 
@@ -131,9 +135,7 @@ sub dumpresults {
     my $word = shift;
     my $iscached = shift;
 
-	binmode(STDOUT, 'utf8');
-
-    my $url = 'http://en.wiktionary.org/wiki/' . uri_escape($word);
+    my $url = 'http://en.wiktionary.org/wiki/' . uri_escape_utf8($word);
 
     my $ln = $langname;
     $ln =~ s/ /_/g;
@@ -150,15 +152,18 @@ sub dumpresults {
 
         print "\n$url\n\n";
     }
+
+    return 0; # cli success
 }
 
 sub dumperr {
     my $err = shift;
 
     # we must output the HTTP headers to STDOUT before anything else
-	binmode(STDOUT, 'utf8');
     $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
 
     # do output
     print "** ERROR: $err\n";
+
+    return -1; # cli failure
 }
