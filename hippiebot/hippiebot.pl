@@ -5,7 +5,7 @@
 
 use warnings;
 use strict;
-use utf8;
+#use utf8; # did any of the code ever need this?
 
 use File::HomeDir;
 use JSON;
@@ -88,7 +88,7 @@ my %fam = (
 	znd => 'Zande',
 );
 
-my $js = JSON->new->utf8()->max_depth(10);
+my $js = JSON->new->max_depth(10);
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %three2one;
@@ -96,6 +96,7 @@ my %name2code;
 
 # TODO handle error
 my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?fields=iso3,isoname,n';
+
 unless ($json) {
     print STDERR "couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
 } else {
@@ -371,7 +372,6 @@ sub metadata_to_english {
         if (exists $l->{sc} || exists $l->{wsc}) {
             $resp .= ' It';
             if (exists $l->{sc}) {
-                $resp .= ' ';
                 $resp .= '\'s written in the ';
                 my $n = 1;
                 if (ref($l->{sc}) eq 'ARRAY') {
