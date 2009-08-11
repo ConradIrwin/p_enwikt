@@ -69,7 +69,7 @@ while (FCGI::accept >= 0) {
     my %opts = ('langname' => 'English');                    
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, qw{dumpsource langname term num numprev numnext callback}); 
+    CliOrCgiOptions(\%opts, qw{dumpsource langname term seq num numprev numnext callback}); 
         
     # process this request
 
@@ -165,6 +165,8 @@ while (FCGI::accept >= 0) {
 
         $results->{prev} = [@$words[$a .. $b-1]] if $a != $b;
         $results->{next} = [@$words[$c .. $d-1]] if $c != $d;
+
+        $results->{seq} = $opts{seq} if exists $opts{seq};
 
         dumpresults($results, 'json', $opts{callback});
 
