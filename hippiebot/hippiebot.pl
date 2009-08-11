@@ -80,6 +80,7 @@ my %fam = (
 	son => 'Songhai',
 	ssa => 'Nilo-Saharan',
 	tai => 'Tai',
+    trk => 'Turkic',
 	tup => 'Tupi',
 	tut => 'Altaic',
 	wak => 'Wakashan',
