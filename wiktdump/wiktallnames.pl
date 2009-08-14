@@ -64,7 +64,7 @@ my $old_o = 0;
 my ($v, $o, $l);
 
 while (1) {
-    read(IFH, $v, 4) || last;
+    read(IFH, $v, 4) || do { print STDERR "* allnames index EOF\n"; last; };
 
     $o = unpack('I', $v);
 
@@ -91,4 +91,8 @@ while (1) {
 
     print $l, "\n";
 }
+
+print STDERR "allnames.pl terminating successfully\n";
+
+exit 0;
 
