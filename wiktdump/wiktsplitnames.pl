@@ -195,7 +195,11 @@ sub emit_title {
     my $pagelang = shift;
     my $title = shift;
 
-    #print "\t\"$pagelang\"\n";
+    # sanitize filenames. ==Portuguese / Spanish== has been seen
+    if ($pagelang =~ /[\/%]/) {
+        $pagelang =~ s/([\/%])/sprintf("%%%02X",ord($1))/eg;
+    }
+
     if (open(LFH, ">>buxxo/$pagelang.txt")) {
         print LFH "$title\n";
         close(LFH);
@@ -210,6 +214,11 @@ sub emit_prev_body {
     my $body = shift;
 
     return unless ($pagelang);
+
+    # sanitize filenames. ==Portuguese / Spanish== has been seen
+    if ($pagelang =~ /[\/%]/) {
+        $pagelang =~ s/([\/%])/sprintf("%%%02X",ord($1))/eg;
+    }
 
     if (open(LFH, ">>fluxxo/$pagelang.txt")) {
         print LFH "<page>\n  <title>$title</title>\n  <text>$body</text>\n</page><!--$title-->\n";
