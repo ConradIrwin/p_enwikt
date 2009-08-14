@@ -11,6 +11,7 @@ use LWP::Simple;
 use MediaWiki::API;
 
 binmode STDOUT, ':utf8';
+binmode STDERR, ':utf8';
 
 use constant TESTDIR => 'enwiktjstestdir';
 use constant BATCHSIZE => 32;
@@ -70,16 +71,26 @@ for (my $i = 0; $i < $numpages; $i += BATCHSIZE) {
             #print "$id\t$title\n$content\n----------\n";
             my $fullname = TESTDIR . '/' . $title;
             my $dirname = dirname($fullname);
+            my $basename = basename($fullname);
 
-            # if we try to make a path that already exists we get an error
+            # avoid .js in directory names - yes people really do that
+            $dirname =~ s/\.js\b/_js/g;
+
+            $fullname = $dirname . '/' . $basename;
+
             my $pathmade = 0;
+
             if ($madepaths{$dirname}) {
+                print STDERR "** path already made: ", $dirname, "\n";
                 $pathmade = 1;
             } elsif (mkpath($dirname)) {
+                print STDERR "** created path ", $dirname, "\n";
                 $madepaths{$dirname} = 1;
                 $pathmade = 1;
             } else {
-                print STDERR "** couldn't create path ", $dirname, " ($!)\n";
+                #print STDERR "** couldn't create path ", $dirname, " ($!)\n";
+                print STDERR "** fuck knows this path ", $dirname, " ($!)\n";
+                $pathmade = 1;
             }
 
             if ($pathmade) {
@@ -95,44 +106,4 @@ for (my $i = 0; $i < $numpages; $i += BATCHSIZE) {
         print STDERR '** api error: ', $mw->{error}->{code} . ': ' . $mw->{error}->{details}, "\n";
     }
 }
-
-exit;
-
-
-
-
-my $fcount = 0;
-my $ffailcount = 0;
-
-if (mkdir TESTDIR) {
-    print STDERR "** created dir ", TESTDIR, "\n";
-    
-    foreach my $row (@$ref) {
-        my $pagename = $nsmap{$row->[0]} . ':' . $row->[1];
-
-        my $basename = basename($pagename);
-
-        ++$fcount;
-
-        my $testfilename = TESTDIR . '/' . $basename;
-
-        if (open (FH, '>', $testfilename)) {
-            close (FH);
-            unless (unlink $testfilename) {
-                print STDERR "** couldn't delete file ", $testfilename, " ($!)\n";
-            }
-        } else {
-            print STDERR "** couldn't create file ", $testfilename, " ($!)\n";
-            ++$ffailcount;
-        }
-    }
-
-    unless (rmdir TESTDIR) {
-        print STDERR "** couldn't remove dir ", TESTDIR, "\n";
-    }
-} else {
-    print STDERR "** couldn't create dir ", TESTDIR, "\n";
-}
-
-print "out of $fcount files, $ffailcount failed\n";
 

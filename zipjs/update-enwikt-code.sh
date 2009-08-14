@@ -24,37 +24,26 @@ if [ $? = 0 ] ; then
     diff -ru $olddir $newdir >$diffile
 
     if [ $? = 1 ] ; then
-        echo "things have changed, man"
         mail $emailto <$diffile
 
         cd $newdir
 
-        rm $tmparc
-        if [ $? = 1 ] ; then
-            echo "rm 1"
-        else
-            echo "rm 0"
-        fi
+            # make sure we don't add to some old archive
+            rm $tmparc
 
-        tar zcpvf $tmparc * >/dev/null
-        if [ $? = 1 ] ; then
-            echo "tar 1"
-        else
-            echo "tar 0"
-            mv $tmparc $pubarc
-            if [ $? = 1 ] ; then
-                echo "pub 1"
-            else
-                echo "pub 0"
+            # create a new archive
+            tar zcpvf $tmparc * >/dev/null
+            if [ $? = 0 ] ; then
+                mv $tmparc $pubarc
             fi
-        fi
 
-        cd ..
+        cd ~
 
+        # keep the new files and toss the old ones
         rm -rf $olddir
         mv $newdir $olddir
     else
-        echo "same old same old"
+        # toss the new files since they haven't changed
         rm -rf $newdir
     fi
 
