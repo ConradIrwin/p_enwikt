@@ -13,7 +13,7 @@ use MediaWiki::API;
 binmode STDOUT, ':utf8';
 binmode STDERR, ':utf8';
 
-use constant TESTDIR => 'enwiktjstestdir';
+use constant TESTDIR => 'enwiktcodenew';
 use constant BATCHSIZE => 32;
 
 my %nsmap = (
@@ -22,7 +22,7 @@ my %nsmap = (
     8 => 'MediaWiki'
 );
 
-print STDERR "getting js page titles...\n";
+print STDERR "getting wiki page titles...\n";
 my $dbh = DBI->connect(
    'DBI:mysql:' .
         'database=enwiktionary_p;' .
@@ -35,7 +35,7 @@ my $dbh = DBI->connect(
 my $statement = 'SELECT page_namespace, page_title FROM page WHERE page_namespace IN (2,4,8) AND page_title REGEXP "\\\\.(css|js)$" AND page_is_redirect = 0';
 
 my $ref = $dbh->selectall_arrayref($statement);
-print STDERR "got js page titles...\n";
+print STDERR "got wiki page titles...\n";
 
 my $mw = MediaWiki::API->new();
 $mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
@@ -43,8 +43,6 @@ $mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
 my @allpages = map $nsmap{$_->[0]} . ':' . $_->[1], @$ref;
 
 my $numpages = scalar @allpages;
-
-my %madepaths;
 
 for (my $i = 0; $i < $numpages; $i += BATCHSIZE) {
     my $u = $i + BATCHSIZE-1;
@@ -64,11 +62,11 @@ for (my $i = 0; $i < $numpages; $i += BATCHSIZE) {
         titles => $titles } );
 
     if ($stuff) {
-        print STDERR "got pages...\n";
+        #print STDERR "got pages...\n";
         foreach my $id (keys %{$stuff->{query}->{pages}}) {
             my $title = $stuff->{query}->{pages}->{$id}->{title};
             my $content = $stuff->{query}->{pages}->{$id}->{revisions}->[0]->{'*'};
-            #print "$id\t$title\n$content\n----------\n";
+
             my $fullname = TESTDIR . '/' . $title;
             my $dirname = dirname($fullname);
             my $basename = basename($fullname);
@@ -78,28 +76,13 @@ for (my $i = 0; $i < $numpages; $i += BATCHSIZE) {
 
             $fullname = $dirname . '/' . $basename;
 
-            my $pathmade = 0;
+            mkpath($dirname);
 
-            if ($madepaths{$dirname}) {
-                print STDERR "** path already made: ", $dirname, "\n";
-                $pathmade = 1;
-            } elsif (mkpath($dirname)) {
-                print STDERR "** created path ", $dirname, "\n";
-                $madepaths{$dirname} = 1;
-                $pathmade = 1;
+            if (open (FH, '>:encoding(utf8)', $fullname)) {
+                print FH $content;
+                close (FH);
             } else {
-                #print STDERR "** couldn't create path ", $dirname, " ($!)\n";
-                print STDERR "** fuck knows this path ", $dirname, " ($!)\n";
-                $pathmade = 1;
-            }
-
-            if ($pathmade) {
-                if (open (FH, '>:encoding(utf8)', $fullname)) {
-                    print FH $content;
-                    close (FH);
-                } else {
-                    print STDERR "** couldn't create file ", $fullname, " ($!)\n";
-                }
+                print STDERR "** couldn't create file ", $fullname, " ($!)\n";
             }
         }
     } else {
