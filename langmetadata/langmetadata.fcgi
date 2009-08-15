@@ -2,6 +2,8 @@
 
 # output language metadata structure as JSON, optionally formatted
 
+# TODO output real JSON, JavaScript, Perl, XML
+
 # On Toolserver you can find all script templates on Wiktionary
 # sql enwiktionary_p
 # SELECT page_title FROM page WHERE page_title REGEXP "^([a-z][a-z][a-z]?-)?[A-Z][a-z][a-z][a-z]$" AND page_namespace = 10;
@@ -345,10 +347,7 @@ my $wmmetadata = {
     'zh-yue'=>{sc=>'Hani',n=>'Cantonese'}
 };
 
-# read which language wiktionaries exist from noc.wikimedia.org
-# TODO native names can also be extracted from sitematrix
-
-my $wmlangcontent = get 'http://noc.wikimedia.org/conf/all.dblist';
+# read which language wiktionaries exist from sitematrix
 
 my $mw = MediaWiki::API->new();
 $mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
@@ -372,6 +371,7 @@ for (my $n = 0; exists $json->{sitematrix}->{$n}; ++$n) {
 # English Wiktionary metadata
 # TODO extract code/name pairs using the code from enwiktlangs.pl
 # TODO xx-Yyyy style script templates could be discovered too
+# TODO incorporate enwiktlangs and enwikilangs here
 
 my $enwiktmetadata = {
     ang=>{altmapfrom=>'ĀāǢǣĊċĒēĠġĪīŌōŪūȲȳ',altmapto=>'AaÆæCcEeGgIiOoUuYy'},
