@@ -13,6 +13,7 @@ use URI::Escape;
 
 binmode STDOUT, ':utf8';
 
+my $PAGE_LIST_PATH = '/home/hippietrail/buxxo';
 my $scriptmode = 'cli';
 
 # initialize
@@ -42,7 +43,7 @@ while (FCGI::accept >= 0) {
         my $q = CGI->new;
         print $q->header(-charset=>'UTF-8');
         print $q->start_html(-title=>'Random Wiktionary entry by language');
-        my @files = </home/hippietrail/buxxo/*>;
+        my @files = <$PAGE_LIST_PATH/*>;
         my $half = int((scalar @files + 1) / 2);
         print "<table><tr><td><ul>";
         for (my $i = 0; $i < $half; ++$i) {
@@ -58,65 +59,67 @@ while (FCGI::accept >= 0) {
         } 
         print "</ul></td></tr></table>";
         print $q->end_html;
-    } elsif (exists $opts{langcode}) {
-        $opts{langname} = '';
-        my $json;
-        my $ok = 0;
-        if ($json = $mw->api( { action => 'expandtemplates',
-                                text   => '{{' . $opts{langcode} . '}}' } )) {
-            my $et = $json->{expandtemplates}->{'*'};
-            $et =~ /^([^:]+): /g;
-            my $c = $1;
-            if ($et =~ /\G(?:(?:\[\[)?([^];]*)(?:]])?(?: \((.*)\))?)$/s) {
-                if ($1 && $1 !~ /[[|<*]/s && $1 ne "\n") {  # catch false positives
-                    if (index($1, ':Template:') == -1) {
-                        $ok = 1;
+    } else {
+        if (exists $opts{langcode}) {
+            $opts{langname} = '';
+            my $json;
+            my $ok = 0;
+            if ($json = $mw->api( { action => 'expandtemplates',
+                                    text   => '{{' . $opts{langcode} . '}}' } )) {
+                my $et = $json->{expandtemplates}->{'*'};
+                $et =~ /^([^:]+): /g;
+                my $c = $1;
+                if ($et =~ /\G(?:(?:\[\[)?([^];]*)(?:]])?(?: \((.*)\))?)$/s) {
+                    if ($1 && $1 !~ /[[|<*]/s && $1 ne "\n") {  # catch false positives
+                        if (index($1, ':Template:') == -1) {
+                            $ok = 1;
+                        }
                     }
                 }
-            }
-            if ($ok) {
-                $opts{langname} = $2 ? $1 . ' (' . $2 . ')' : $1;
+                if ($ok) {
+                    $opts{langname} = $2 ? $1 . ' (' . $2 . ')' : $1;
+                }
             }
         }
-    }
-    if (!$opts{langname}) {
-        $cli_retval = dumperr(exists $opts{langcode} ? 'can\'t find language for code'
-                                       : 'no language name specified');
-    } elsif (open(FILE, "<:utf8", "/home/hippietrail/buxxo/$opts{langname}.txt")) {
-            # FILE, "<:utf8", $fname 
-        my $iscached;
-        my $words;
+        if (!$opts{langname}) {
+            $cli_retval = dumperr(exists $opts{langcode} ? 'can\'t find language for code'
+                                           : 'no language name specified');
+        } elsif (open(FILE, "<:utf8", $PAGE_LIST_PATH . '/' . $opts{langname} . '.txt')) {
+                # FILE, "<:utf8", $fname 
+            my $iscached;
+            my $words;
 
-        if (exists $cache{$opts{langname}}) {
-            $iscached = 1;
-            $words = $cache{$opts{langname}};
+            if (exists $cache{$opts{langname}}) {
+                $iscached = 1;
+                $words = $cache{$opts{langname}};
+            } else {
+                $iscached = 0;
+
+                # read file into an array
+                my @words = <FILE>;
+                $words = \@words;
+
+                $cache{$opts{langname}} = $words;
+
+                # close file 
+                close(FILE);
+            }
+
+            my $numwords = scalar @$words;
+            my $r = int(rand($numwords));
+            my $title = $words->[$r];
+            chomp $title;
+
+            if (substr($opts{langname}, 0, 1) eq '_') {
+                if ($opts{langname} ne '_Redirect' && substr($opts{langname}, 0, 10) ne '_Category:') {
+                    $title = substr($opts{langname}, 1) . ':' . $title;
+                }
+            }
+
+            $cli_retval = dumpresults($opts{langname}, $title, $iscached);
         } else {
-            $iscached = 0;
-
-            # read file into an array
-            my @words = <FILE>;
-            $words = \@words;
-
-            $cache{$opts{langname}} = $words;
-
-            # close file 
-            close(FILE);
+            $cli_retval = dumperr("couldn't open word file for '$opts{langname}'");
         }
-
-        my $numwords = scalar @$words;
-        my $r = int(rand($numwords));
-        my $title = $words->[$r];
-        chomp $title;
-
-        if (substr($opts{langname}, 0, 1) eq '_') {
-            if ($opts{langname} ne '_Redirect' && substr($opts{langname}, 0, 10) ne '_Category:') {
-                $title = substr($opts{langname}, 1) . ':' . $title;
-            }
-        }
-
-        $cli_retval = dumpresults($opts{langname}, $title, $iscached);
-    } else {
-        $cli_retval = dumperr("couldn't open word file for '$opts{langname}'");
     }
 }
 
