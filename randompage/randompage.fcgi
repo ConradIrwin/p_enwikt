@@ -34,6 +34,9 @@ while (FCGI::accept >= 0) {
         
     # process this request
 
+    # MediaWiki functions can result in spaces becomeing pluses
+    $opts{langname} =~ s/\+/ /g if (exists $opts{langname});
+
     if (exists $opts{dumpsource}) {
         $cli_retval = dumpsource();
         next;
@@ -84,8 +87,8 @@ while (FCGI::accept >= 0) {
         if (!$opts{langname}) {
             $cli_retval = dumperr(exists $opts{langcode} ? 'can\'t find language for code'
                                            : 'no language name specified');
+
         } elsif (open(FILE, "<:utf8", $PAGE_LIST_PATH . '/' . $opts{langname} . '.txt')) {
-                # FILE, "<:utf8", $fname 
             my $iscached;
             my $words;
 
@@ -152,6 +155,10 @@ sub dumpresults {
     my $url = 'http://en.wiktionary.org/wiki/' . uri_escape_utf8($word);
 
     $url .= '?rndlangcached=' . ($iscached ? 'yes' : 'no');
+
+    # Needed so that Wiktionary can create a "go again" link
+    $url .= '?rndlang=' . uri_escape_utf8($langname);
+
     if (substr($langname, 0, 1) ne '_') {
         my $ln = $langname;
         $ln =~ s/ /_/g;
