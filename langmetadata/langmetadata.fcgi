@@ -154,7 +154,7 @@ my $metadata = {
     gnn=>{sc=>'Latn',n=>'Gumatj',fam=>'aus',geo=>'AU'},
     got=>{sc=>'Goth',g=>'mfn',p=>1,n=>'Gothic',anc=>1,fam=>'gme'},
     grc=>{sc=>'Grek',g=>'mfn',p=>1,n=>'Ancient Greek',anc=>1},
-    gu=>{sc=>'Gujr',n=>'Gujarati',fam=>'inc',geo=>'IN'},
+    gu=>{sc=>'Gujr',g=>'mfn',p=>1,n=>'Gujarati',fam=>'inc',geo=>'IN'},
     guf=>{sc=>'Latn',n=>'Gupapuyngu',fam=>'aus',geo=>'AU'},
     gut=>{n=>['Maléku Jaíka','Guatuso'],fam=>'cba',geo=>'CR'},
     gv=>{n=>'Manx',fam=>'cel'},
