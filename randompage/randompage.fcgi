@@ -2,7 +2,6 @@
 
 # random en.wiktionary page per language
 
-use utf8;
 use strict;
 
 use CGI;
@@ -152,17 +151,19 @@ sub dumpresults {
     my $word = shift;
     my $iscached = shift;
 
-    my $url = 'http://en.wiktionary.org/wiki/' . uri_escape_utf8($word);
+    # XXX should this just use $word or uri_escape_utf8($word) ?
+    my $url = 'http://en.wiktionary.org/wiki/' . $word;
 
     $url .= '?rndlangcached=' . ($iscached ? 'yes' : 'no');
 
     # Needed so that Wiktionary can create a "go again" link
-    $url .= '?rndlang=' . uri_escape_utf8($langname);
+    $url .= '?rndlang=' . uri_escape($langname);
 
     if (substr($langname, 0, 1) ne '_') {
-        my $ln = $langname;
-        $ln =~ s/ /_/g;
-        $url .= '#' . $ln;
+        my $frag = uri_escape($langname);
+        $frag =~ s/%20/_/g;
+        $frag =~ s/%/./g;
+        $url .= '#' . $frag;
     }
 
     if ($scriptmode eq 'cgi') {
