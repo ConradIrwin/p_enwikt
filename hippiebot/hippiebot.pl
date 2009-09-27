@@ -5,7 +5,7 @@
 
 use warnings;
 use strict;
-#use utf8; # did any of the code ever need this?
+use utf8; # did any of the code ever need this?
 
 use File::HomeDir;
 use JSON;
@@ -92,7 +92,7 @@ my %fam = (
 	znd => 'Zande',
 );
 
-my $js = JSON->new->max_depth(10);
+my $js = JSON->new->utf8(10);
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %three2one;
@@ -448,9 +448,16 @@ sub do_random {
 
     if ($location) {
         $ok = 1;
-        $location =~ /\/wiki\/(.*)\?rndlangcached=(\w+)#(.*)$/;
+        my $uri = URI->new($location);
 
-        my ($word, $iscached, $langname) = ($1, $2 eq 'yes', $3);
+        my $langname = $uri->fragment;
+
+        $uri->path =~ /^\/wiki\/(.*)$/;
+        my $word = $1;
+
+        my %q = $uri->query_form;
+        my $iscached = $q{rndlangcached} eq 'yes';
+
         $word = uri_unescape($word);
         utf8::decode($word);
         utf8::decode($langname);
