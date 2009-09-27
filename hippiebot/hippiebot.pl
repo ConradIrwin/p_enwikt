@@ -5,7 +5,7 @@
 
 use warnings;
 use strict;
-use utf8; # did any of the code ever need this?
+use utf8; # needed due to literal unicode for stripping diacritics
 
 use File::HomeDir;
 use JSON;
@@ -13,9 +13,12 @@ use LWP::Simple;
 use LWP::UserAgent;
 use POE;
 use POE::Component::IRC;
+use POE::Component::IRC::Common qw(irc_to_utf8);
 use Tie::TextDir;
 use Time::Duration;
 use URI::Escape;
+
+binmode STDOUT, ':utf8';
 
 # slurp dumped enwikt language code : name mappings
 open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
@@ -168,6 +171,8 @@ sub on_public {
     my $nick = ( split /!/, $who )[0];
     my $channel = $where->[0];
 
+    $msg = irc_to_utf8($msg);
+
     my $ts = scalar localtime;
 
     if ( my ($incode) = $msg =~ /^lang (.+)/ ) {
@@ -195,6 +200,14 @@ sub on_public {
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
+    elsif ( my ($page) = $msg =~ /^toc (.+)/ ) {
+        print " [$ts] <$nick:$channel> $msg\n";
+
+        my $resp = do_toc($page);
+
+        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    }
+
     elsif ( $nick eq 'hippietrail' && $nickserv ) {
         print " [$ts] <$nick:$channel> $msg\n";
 
@@ -210,6 +223,8 @@ sub on_msg {
     my ( $kernel, $who, $where, $msg ) = @_[ KERNEL, ARG0, ARG1, ARG2 ];
     my $nick = ( split /!/, $who )[0];
     my $channel = $where->[0];
+
+    $msg = irc_to_utf8($msg);
 
     my $ts = scalar localtime;
     print " [$ts] <$nick:$channel> $msg\n";
@@ -229,6 +244,12 @@ sub on_msg {
 
     elsif ( my ($lang) = $msg =~ /^random (.+)/ ) {
         my $resp = do_random($incode);
+
+        $resp && $irc->yield( privmsg => $nick, $resp );
+    }
+
+    elsif ( my ($page) = $msg =~ /^toc (.+)/ ) {
+        my $resp = do_toc($page);
 
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
@@ -451,6 +472,9 @@ sub do_random {
         my $uri = URI->new($location);
 
         my $langname = $uri->fragment;
+        $langname =~ tr/\._/% /;
+        $langname = uri_unescape($langname);
+        utf8::decode($langname);
 
         $uri->path =~ /^\/wiki\/(.*)$/;
         my $word = $1;
@@ -460,8 +484,6 @@ sub do_random {
 
         $word = uri_unescape($word);
         utf8::decode($word);
-        utf8::decode($langname);
-        $langname =~ s/_/ /g;
 
         if ($langname eq ' Redirect') {
             $resp = "How about the nice redirect [[$word]] ";
@@ -488,6 +510,40 @@ sub do_random {
     }
 
     hippbotlog('random', $lang, $ok);
+
+    return $resp;
+}
+
+sub do_toc {
+    my $page = shift;
+    my $ok = 0;
+    my $resp = $page . ': ';
+
+    my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=sections&page=';
+
+    my $data;
+    my $json = get $uri . $page;
+
+    if ($json) {
+        $data = $js->decode($json);
+
+        if (exists $data->{parse} && exists $data->{parse}->{sections}) {
+            my @langs;
+            foreach my $s (@{$data->{parse}->{sections}}) {
+                push @langs, $s->{line} if $s->{level} == 2;
+            }
+            if (@langs) {
+                $ok = 1;
+                $resp .= join(', ', @langs);
+            } else {
+                $resp .= 'couldn\'t see any language headings';
+            }
+        }
+    } else {
+        print STDERR "couldn't get data on TOC\'s for \'$page\' from the Toolserver\n";
+    }
+
+    hippbotlog('toc', '', $ok);
 
     return $resp;
 }
