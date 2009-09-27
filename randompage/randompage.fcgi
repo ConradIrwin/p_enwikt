@@ -152,12 +152,13 @@ sub dumpresults {
     my $iscached = shift;
 
     # XXX should this just use $word or uri_escape_utf8($word) ?
+    # TODO build with URI module. it would avoid prolems like where I had a ? where an & belonged
     my $url = 'http://en.wiktionary.org/wiki/' . $word;
 
     $url .= '?rndlangcached=' . ($iscached ? 'yes' : 'no');
 
     # Needed so that Wiktionary can create a "go again" link
-    $url .= '?rndlang=' . uri_escape($langname);
+    $url .= '&rndlang=' . uri_escape($langname);
 
     if (substr($langname, 0, 1) ne '_') {
         my $frag = uri_escape($langname);
