@@ -109,6 +109,7 @@ while (1) {
 
     $l = decode('utf8', $l) if ($opt_n);
 
+    # TODO remind me why I decode the entities...
     $l = decode_entities($l);
 
     $t = substr($l,11,length($l)-20);
@@ -126,7 +127,28 @@ while (1) {
 	if ($ns ne 0) {
         my ($left, $right) = ($t =~ /^([^:]*):(.*)$/);
         $opt_b || emit_title('_'.$left, $right);
-        # TODO output namespace article bodies to a per-namespace file
+        if ($opt_b) {
+            my $islast = 0;
+            my $body = '';
+            while (1) {
+                if (index($l, '      <text') == 0) {
+                    $l = substr($l, 33);
+                }
+                if (rindex($l, '</text>') != -1) {
+                    $l = substr($l, 0, -8);
+                    $islast = 1;
+                }
+                # TODO remind me why I decode the entities...
+                $l = decode_entities($l);
+
+                $body .= $l;
+
+                $l = <DFH>;
+
+                last if $islast;
+            }
+            emit_prev_body('_'.$left, $t, $body);
+        }
 		next;
 	}
 
@@ -152,6 +174,7 @@ while (1) {
 			$l = substr($l, 0, -8);
 			$islast = 1;
 		}
+        # TODO remind me why I decode the entities...
 		$l = decode_entities($l);
 		if ($isfirst) {
 			$firstwikitextline = $l;
