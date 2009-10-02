@@ -58,6 +58,7 @@ my %fam = (
 	ine => 'Indo-European',
 	ira => 'Iranian',
 	iro => 'Iroquoian',
+    itc => 'Italic',
 	kar => 'Karen',
 	khi => 'Khoisan',
 	kro => 'Kru',
