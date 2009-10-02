@@ -16,8 +16,8 @@
 
 # A machine readable ISO 639 file can is available at http://www.sil.org/ISO639-3/iso-639-3_Name_Index_20090210.tab
 
-use utf8;
 use strict;
+use utf8; # needed due to literal unicode for stripping diacritics
 
 use FCGI;
 use Getopt::Long;
@@ -196,7 +196,7 @@ my $metadata = {
     ku=>{sc=>'Arab',n=>'Kurdish'},
     kw=>{n=>'Cornish',fam=>'cel',geo=>'GB'},
     ky=>{sc=>'Cyrl',g=>'',alt=>0,n=>'Kyrgyz',fam=>'tut',geo=>'KG'},
-    la=>{sc=>'Latn',g=>'mfn',p=>1,alt=>1,n=>'Latin',anc=>1,fam=>'roa'},
+    la=>{sc=>'Latn',g=>'mfn',p=>1,alt=>1,n=>'Latin',anc=>1,fam=>'itc'},
     lez=>{sc=>'Cyrl',n=>'Lezgi'},
     lo=>{sc=>'Laoo',g=>'',p=>0,alt=>0,n=>'Lao',fam=>'tai',geo=>'LA'},
     lt=>{sc=>'Latn',g=>'mf',p=>1,alt=>1,n=>'Lithuanian',fam=>'bat',geo=>'LT'},
