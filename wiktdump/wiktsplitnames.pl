@@ -109,10 +109,10 @@ while (1) {
 
     $l = decode('utf8', $l) if ($opt_n);
 
-    # TODO remind me why I decode the entities...
-    $l = decode_entities($l);
+    # decode entities for tittle but not for line
+    $t = decode_entities($l);
 
-    $t = substr($l,11,length($l)-20);
+    $t = substr($t,11,length($t)-20);
 
     $t = NFD($t) if ($opt_n);
 
@@ -128,6 +128,13 @@ while (1) {
         my ($left, $right) = ($t =~ /^([^:]*):(.*)$/);
         $opt_b || emit_title('_'.$left, $right);
         if ($opt_b) {
+
+            # ignore fields between title and text
+            while (<DFH>) {
+                last if (/<text /);
+            }
+
+            $l = $_;
             my $islast = 0;
             my $body = '';
             while (1) {
@@ -138,8 +145,6 @@ while (1) {
                     $l = substr($l, 0, -8);
                     $islast = 1;
                 }
-                # TODO remind me why I decode the entities...
-                $l = decode_entities($l);
 
                 $body .= $l;
 
@@ -162,7 +167,7 @@ while (1) {
 	my $islast = 0;
 	my $firstwikitextline;
 
-    my $pagelang = undef;
+    my $pagelang = '__prologs';
     my $body = '';
 
     # each line of <text>
@@ -174,13 +179,12 @@ while (1) {
 			$l = substr($l, 0, -8);
 			$islast = 1;
 		}
-        # TODO remind me why I decode the entities...
-		$l = decode_entities($l);
 		if ($isfirst) {
 			$firstwikitextline = $l;
 			chomp $firstwikitextline;
             # TODO so far we only handle redirects in the article namespace
 			if ($firstwikitextline =~ /^#\s*redirect\s*\[\[(.*?)\]\]/i) {
+                # TODO a redirect page can have stuff after the redirect line
                 $opt_b || emit_title('_Redirect', $t);
                 $opt_b && emit_prev_body('_Redirect', $t, $l);
 				last;
@@ -236,7 +240,7 @@ sub emit_prev_body {
     my $title = shift;
     my $body = shift;
 
-    return unless ($pagelang);
+    return unless $body ne '';
 
     # sanitize filenames. ==Portuguese / Spanish== has been seen
     if ($pagelang =~ /[\/%]/) {
