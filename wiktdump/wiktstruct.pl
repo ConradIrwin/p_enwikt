@@ -91,8 +91,6 @@ my ($v, $o, $l, $t);
 # each page in dump
 for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
     my $page;
-    my @page_langs = ();
-    my @page_heads = ();
 
     $o = unpack('I', $v);
 
@@ -128,9 +126,6 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
         id_for_lang('_'.$left);
         # TODO output namespace article bodies to a per-namespace file
 
-        push @page_langs, $lang2id{'_' . $left};
-        emit_data($t, $page_i, \@page_langs);
-
         next;
     }
 
@@ -164,9 +159,6 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
             if ($firstwikitextline =~ /^#\s*redirect\s*\[\[(.*?)\]\]/i) {
                 id_for_lang('_Redirect');
 
-                push @page_langs, $lang2id{'_Redirect'};
-                emit_data($t, $page_i, \@page_langs);
- 
                 last;
             }
             $isfirst = 0;
@@ -183,7 +175,6 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
             if ($level == 2) {
                 id_for_lang($pagehead);
 
-                push @page_langs, $lang2id{$pagehead};
                 push @{$page->{entries}}, { 'lang' => $lang2id{$pagehead} . "\t" . $pagehead };
 
             } elsif ($level > 2) {
@@ -194,7 +185,6 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
                     push @{$page->{entries}}, { 'lang' => "\\N\t\\N" };
                 }
 
-                push @page_heads, [$level, $head2id{$pagehead}];
                 push @{$page->{entries}->[-1]->{sects}}, $level . "\t" . $head2id{$pagehead} . "\t" . $pagehead;
 
             } else {
@@ -203,8 +193,6 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
         }
 
         if ($islast) {
-            # output string of lang id's
-            emit_data($t, $page_i, \@page_langs, \@page_heads);
             emit_page($page);
 
             last;
@@ -246,21 +234,6 @@ sub id_for_head {
     return $id;
 }
 
-sub emit_data {
-    my $page_title = shift;
-    my $page_id = shift;
-    my $page_langs = shift;
-    my $page_heads = shift;
-
-    if (open(LFH, ">>__data.txt")) {
-        print LFH $page_id, ':', $page_title, ':', join(',', map { $id2lang[$_] } @$page_langs),"\n";
-        $page_heads && print LFH $page_id, ':', $page_title, ':', join(',', map { $_->[0] . ':' . $id2head[$_->[1]] } @$page_heads),"\n";
-        close(LFH);
-    } else {
-        print STDERR "can't open __data.txt\n";
-    }
-}
-
 sub emit_lang {
     my $lang = shift;
 
@@ -286,11 +259,17 @@ sub emit_head {
 sub emit_page {
     my $p = shift;
 
-    my $t = $p->{title};
-    foreach my $e (@{$p->{entries}}) {
-        foreach my $s (@{$e->{sects}}) {
-            print "$t\t", $e->{lang}, "\t$s\n";
+    if (open(PFH, ">>__pages.txt")) {
+        my $t = $p->{title};
+        foreach my $e (@{$p->{entries}}) {
+            print PFH "$t\t", $e->{lang}, "\t\\N\t\\N\t\\N\n";
+            foreach my $s (@{$e->{sects}}) {
+                print PFH "$t\t", $e->{lang}, "\t$s\n";
+            }
         }
+        close(PFH);
+    } else {
+        print STDERR "can't open __pages.txt\n";
     }
 }
 
