@@ -39,8 +39,6 @@ if ($contribs) {
     }
 }
 
-my @list;
-
 print STDERR "revisions...\n";
 for my $uc (@modded) {
     my $json = get $apiurl . '&action=query&prop=revisions&titles=' .
@@ -52,19 +50,13 @@ for my $uc (@modded) {
             if (exists $revs->{query}->{pages}) {
                 if (exists $revs->{query}->{pages}->{$uc->{pageid}}) {
                     if (exists $revs->{query}->{pages}->{$uc->{pageid}}->{revisions}) {
-                        push @list, [ $uc->{title}, [
-                            grep { !/^(AutoFormat|Interwicket|$user)$/ }
-                            map $_->{user}, @{$revs->{query}->{pages}->{$uc->{pageid}}->{revisions}} ] ];
+                        print "$uc->{title}\n" if
+                            grep { !/^(AutoFormat|Interwicket|Tbot|$user)$/ }
+                            map $_->{user}, @{$revs->{query}->{pages}->{$uc->{pageid}}->{revisions}};
                     }
                 }
             }
         }
     }
-}
-
-for my $item (@list) {
-    my ($title, $mods) = ($item->[0], $item->[1]);
-
-    print $title, "\n" if @$mods;
 }
 
