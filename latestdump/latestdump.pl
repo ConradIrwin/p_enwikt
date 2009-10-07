@@ -146,7 +146,7 @@ sub latest_devtionary {
     my $site;
     my $req;
     my $res;
-    foreach my $s ('www.devtionary.info', '70.79.96.121') {
+    foreach my $s ('www.devtionary.org', '70.79.96.121') {
         $req = HTTP::Request->new(GET => "http://$s/w/dump/xmlu/");
 
         $res = $ua->request($req);
