@@ -12,8 +12,8 @@ use JSON;
 use LWP::Simple;
 use LWP::UserAgent;
 use POE;
-use POE::Component::IRC;
 use POE::Component::IRC::Common qw(irc_to_utf8);
+use POE::Component::IRC::State;
 use Tie::TextDir;
 use Time::Duration;
 use URI::Escape;
@@ -51,7 +51,7 @@ my %fam = (
     esx => 'Eskimo-Aleut',
 	fiu => 'Finno-Ugrian',
 	gem => 'Germanic',
-    gme => ' East Germanic',
+    gme => 'East Germanic',
     gmq => 'North Germanic',
 	ijo => 'Ijo',
 	inc => 'Indic',
@@ -132,7 +132,7 @@ sub CHANNEL () { $ARGV[0] ? '#hippiebot' : '#wiktionary' }
 sub BOTNICK () { $ARGV[0] ? 'hippiebot-d' : 'hippiebot' }
 
 # Create the component that will represent an IRC network.
-my ($irc) = POE::Component::IRC->spawn();
+my ($irc) = POE::Component::IRC::State->spawn();
 
 # Create the bot session.  The new() call specifies the events the bot
 # knows about and the functions that will handle those events.
@@ -193,7 +193,7 @@ sub on_public {
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
-    elsif ( my ($lang) = $msg =~ /^random (.+)/ ) {
+    elsif ( my ($lang) = $msg =~ /^random (.+)$/ ) {
         print " [$ts] <$nick:$channel> $msg\n";
 
         my $resp = do_random($lang);
@@ -201,10 +201,26 @@ sub on_public {
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
-    elsif ( my ($page) = $msg =~ /^toc (.+)/ ) {
+    elsif ( my ($page) = $msg =~ /^toc (.+)$/ ) {
         print " [$ts] <$nick:$channel> $msg\n";
 
         my $resp = do_toc($page);
+
+        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    }
+
+    elsif ( my ($args) = $msg =~ /^gf (.+)$/ ) {
+        print " [$ts] <$nick:$channel> $msg\n";
+
+        my $resp = do_gf($channel, $args);
+
+        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    }
+
+    elsif ( my ($term) = $msg =~ /^define (.+)$/ ) {
+        print " [$ts] <$nick:$channel> $msg\n";
+
+        my $resp = do_define($channel, $term);
 
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
@@ -243,14 +259,26 @@ sub on_msg {
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
 
-    elsif ( my ($lang) = $msg =~ /^random (.+)/ ) {
+    elsif ( my ($lang) = $msg =~ /^random (.+)$/ ) {
         my $resp = do_random($incode);
 
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
 
-    elsif ( my ($page) = $msg =~ /^toc (.+)/ ) {
+    elsif ( my ($page) = $msg =~ /^toc (.+)$/ ) {
         my $resp = do_toc($page);
+
+        $resp && $irc->yield( privmsg => $nick, $resp );
+    }
+
+    elsif ( my ($args) = $msg =~ /^gf (.+)$/ ) {
+        my $resp = do_gf(undef, $args);
+
+        $resp && $irc->yield( privmsg => $nick, $resp );
+    }
+
+    elsif ( my ($term) = $msg =~ /^define (.+)$/ ) {
+        my $resp = do_define(undef, $term);
 
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
@@ -545,6 +573,71 @@ sub do_toc {
     }
 
     hippbotlog('toc', '', $ok);
+
+    return $resp;
+}
+
+sub do_gf {
+    my $channel = shift;
+    my $args= shift;
+    my $ok = 0;
+    my $resp = undef;
+
+    if ($channel) {
+        if (grep $_ eq 'know-it-all', $irc->channel_list($channel)) {
+            # gf know it all
+        } else {
+            $ok = 1;
+            # gf no know it all
+        }
+    } else {
+        $ok = 1;
+    }
+
+    if ($ok) {
+        #my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=sections&page=';
+        #my $goo1 = get 'http://www.google.com.au/search?q=shrimp+cocktail';
+#print "$!\n";
+        #if (open(GFH, ">google1.html")) {
+        #    print GFH $goo1;
+        #    close(GFH);
+        #}
+        $resp = 'I\'m still looking for a googlefight API';
+        $ok = 0;
+    } else {
+        # gf not ok
+    }
+
+    hippbotlog('gf', '', $ok);
+
+    return $resp;
+}
+
+sub do_define {
+    my $channel = shift;
+    my $term = shift;
+    my $ok = 0;
+    my $resp = undef;
+
+    if ($channel) {
+        if (grep $_ eq 'know-it-all', $irc->channel_list($channel)) {
+            # define know it all
+        } else {
+            $ok = 1;
+            # define no know it all
+        }
+    } else {
+        $ok = 1;
+    }
+
+    if ($ok) {
+        $resp = 'too bad know-it-all isn\'t here';
+        $ok = 0;
+    } else {
+        # define not ok
+    }
+
+    hippbotlog('define', '', $ok);
 
     return $resp;
 }
