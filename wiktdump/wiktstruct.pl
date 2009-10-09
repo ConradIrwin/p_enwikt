@@ -101,7 +101,8 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
 
     $l = decode_entities($l);
 
-    $t = substr($l,11,length($l)-20);
+    # -9 is for \n so probably needs to be -10 for \r\n
+    $t = substr($l,11,-9);
 
     $t = NFD($t) if ($opt_n);
 
@@ -128,6 +129,11 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
 
         next;
     }
+
+    # XXX we rudely assume that <id> is always on the line after <title>
+    $page->{id} = <DFH>;
+    # -6 is for \n so probably needs to be -7 for \r\n
+    $page->{id} = substr($page->{id},8,-6);
 
     # we have the title so now we need to check the namespace and look for language headings
     while (<DFH>) {
@@ -260,11 +266,10 @@ sub emit_page {
     my $p = shift;
 
     if (open(PFH, ">>__pages.txt")) {
-        my $t = $p->{title};
         foreach my $e (@{$p->{entries}}) {
-            print PFH "$t\t", $e->{lang}, "\t\\N\t\\N\t\\N\n";
+            print PFH "$p->{id}\t$p->{title}\t$e->{lang}\t\\N\t\\N\t\\N\n";
             foreach my $s (@{$e->{sects}}) {
-                print PFH "$t\t", $e->{lang}, "\t$s\n";
+                print PFH "$p->{id}\t$p->{title}\t$e->{lang}\t$s\n";
             }
         }
         close(PFH);
