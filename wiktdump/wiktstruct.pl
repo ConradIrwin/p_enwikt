@@ -218,7 +218,7 @@ sub id_for_lang {
         $id = $lang_id_auto_inc++;
         $lang2id{$lang} = $id;
         $id2lang[$id] = $lang;
-        emit_lang($id . ':' . $lang);
+        emit_lang($id . "\t" . $lang);
     }
 
     return $id;
@@ -234,7 +234,7 @@ sub id_for_head {
         $id = $head_id_auto_inc++;
         $head2id{$head} = $id;
         $id2head[$id] = $head;
-        emit_head($id . ':' . $head);
+        emit_head($id . "\t" . $head);
     }
 
     return $id;
