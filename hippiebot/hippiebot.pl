@@ -9,7 +9,7 @@ use utf8; # needed due to literal unicode for stripping diacritics
 
 use File::HomeDir;
 use JSON;
-use LWP::Simple;
+use LWP::Simple qw(get $ua);
 use LWP::UserAgent;
 use POE;
 use POE::Component::IRC::Common qw(irc_to_utf8);
@@ -19,6 +19,9 @@ use Time::Duration;
 use URI::Escape;
 
 binmode STDOUT, ':utf8';
+
+# set a useragent
+$ua->agent('hippiebot');
 
 # slurp dumped enwikt language code : name mappings
 open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
@@ -595,17 +598,27 @@ sub do_gf {
     }
 
     if ($ok) {
-        #my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=sections&page=';
-        #my $goo1 = get 'http://www.google.com.au/search?q=shrimp+cocktail';
-#print "$!\n";
-        #if (open(GFH, ">google1.html")) {
-        #    print GFH $goo1;
-        #    close(GFH);
-        #}
-        $resp = 'I\'m still looking for a googlefight API';
-        $ok = 0;
-    } else {
-        # gf not ok
+        my %searches;
+
+        $searches{$_}=undef for ($args =~ /(".*?"|\S+)/g);
+
+        foreach my $term (keys %searches) {
+            $term =~ s/  +/+/g;
+
+            my $html = get 'http://www.google.com.au/search?q=' . $term;
+
+            if ($html =~ /Results <b>1<\/b> - <b>\d+<\/b> of about <b>([0-9,]+)<\/b> for <b>/) {
+                $searches{$term} = [$1, $1];
+                $searches{$term}->[1] =~ s/,//g;
+            }
+        }
+        $resp = 'Googlefight: ' . join(
+            ', ',
+            map {
+                ($_ =~ /^".*"$/ ? $_ : '\'' . $_ . '\'') . ': ' . $searches{$_}->[0]
+            } sort {
+                $searches{$b}->[1] <=> $searches{$a}->[1]
+            } keys %searches);
     }
 
     hippbotlog('gf', '', $ok);
