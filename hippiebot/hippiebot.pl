@@ -212,10 +212,10 @@ sub on_public {
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
-    elsif ( my ($args) = $msg =~ /^gf (.+)$/ ) {
+    elsif ( my ($force, $args) = $msg =~ /^gf(!)? (.+)$/ ) {
         print " [$ts] <$nick:$channel> $msg\n";
 
-        my $resp = do_gf($channel, $args);
+        my $resp = do_gf($channel, $force, $args);
 
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
@@ -275,7 +275,7 @@ sub on_msg {
     }
 
     elsif ( my ($args) = $msg =~ /^gf (.+)$/ ) {
-        my $resp = do_gf(undef, $args);
+        my $resp = do_gf(undef, undef, $args);
 
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
@@ -582,6 +582,7 @@ sub do_toc {
 
 sub do_gf {
     my $channel = shift;
+    my $force = shift;
     my $args= shift;
     my $ok = 0;
     my $resp = undef;
@@ -589,6 +590,7 @@ sub do_gf {
     if ($channel) {
         if (grep $_ eq 'know-it-all', $irc->channel_list($channel)) {
             # gf know it all
+            $ok = 1 if $force;
         } else {
             $ok = 1;
             # gf no know it all
