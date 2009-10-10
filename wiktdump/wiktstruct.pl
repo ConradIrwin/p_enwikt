@@ -181,7 +181,7 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
             if ($level == 2) {
                 id_for_lang($pagehead);
 
-                push @{$page->{entries}}, { 'lang' => $lang2id{$pagehead} . "\t" . $pagehead };
+                push @{$page->{entries}}, { 'lang' => $lang2id{$pagehead} };
 
             } elsif ($level > 2) {
                 id_for_head($pagehead);
@@ -191,7 +191,7 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
                     push @{$page->{entries}}, { 'lang' => "\\N\t\\N" };
                 }
 
-                push @{$page->{entries}->[-1]->{sects}}, $level . "\t" . $head2id{$pagehead} . "\t" . $pagehead;
+                push @{$page->{entries}->[-1]->{sects}}, $level . "\t" . $head2id{$pagehead};
 
             } else {
                 print STDERR "** bad heading level $level: $t: $pagehead\n";
