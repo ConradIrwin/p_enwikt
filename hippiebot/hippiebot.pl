@@ -31,6 +31,8 @@ close(IN);
 my %enwikt;
 eval '%enwikt = (' . $enwikt . ');';
 
+# XXX this is a full list of ISO 639-3 macrolanguages which map to language families
+# XXX plus some language family codes from ISO 639-5
 my %fam = (
 	afa => 'Afro-Asiatic',
 	alg => 'Algonquian',
@@ -683,9 +685,15 @@ sub hippbotlog {
 
 sub normalize_lang_name {
     my $n = shift;
+
+    # ignore the dates in entries like Old English (ca. 450-1100)
+    # but don't ignore other parenthesised data such as Ainu (Japan)
+    $n = $1 if $n =~ /^(.*) \(.*\d.*\)$/;
+
     $n = lc $n;
     $n =~ s/[- '()!\.\/=ʼ’]//g;
     $n =~ tr/àáâãäåçèéêëìíîñóôõöùúüāīṣṭ/aaaaaaceeeeiiinoooouuuaist/;
+
     return $n;
 }
 
