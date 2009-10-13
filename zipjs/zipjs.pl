@@ -23,6 +23,7 @@ my %nsmap = (
 );
 
 print STDERR "getting wiki page titles...\n";
+
 my $dbh = DBI->connect(
    'DBI:mysql:' .
         'database=enwiktionary_p;' .
@@ -89,4 +90,6 @@ for (my $i = 0; $i < $numpages; $i += BATCHSIZE) {
         print STDERR '** api error: ', $mw->{error}->{code} . ': ' . $mw->{error}->{details}, "\n";
     }
 }
+
+exit;
 

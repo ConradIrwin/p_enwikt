@@ -20,34 +20,36 @@ mkdir $newdir
 
 if [ $? = 0 ] ; then
     nice -n 19 /usr/bin/perl -I/home/hippietrail/lib zipjs.pl
+    if [ $? = 0 ] ; then
 
-    diff -ru $olddir $newdir >$diffile
+        diff -ru $olddir $newdir >$diffile
 
-    if [ $? = 1 ] ; then
-        mail $emailto <$diffile
+        if [ $? = 1 ] ; then
+            mail $emailto <$diffile
 
-        cd $newdir
+            cd $newdir
 
-            # make sure we don't add to some old archive
-            rm $tmparc
+                # make sure we don't add to some old archive
+                rm $tmparc
 
-            # create a new archive
-            tar zcpvf $tmparc * >/dev/null
-            if [ $? = 0 ] ; then
-                mv $tmparc $pubarc
-            fi
+                # create a new archive
+                tar zcpvf $tmparc * >/dev/null
+                if [ $? = 0 ] ; then
+                    mv $tmparc $pubarc
+                fi
 
-        cd ~
+            cd ~
 
-        # keep the new files and toss the old ones
-        rm -rf $olddir
-        mv $newdir $olddir
-    else
-        # toss the new files since they haven't changed
-        rm -rf $newdir
+            # keep the new files and toss the old ones
+            rm -rf $olddir
+            mv $newdir $olddir
+        else
+            # toss the new files since they haven't changed
+            rm -rf $newdir
+        fi
+
+        rm $diffile
     fi
-
-    rm $diffile
 fi
 
 exit;
