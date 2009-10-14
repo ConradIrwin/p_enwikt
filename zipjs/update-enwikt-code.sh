@@ -30,7 +30,7 @@ if [ $? = 0 ] ; then
             cd $newdir
 
                 # make sure we don't add to some old archive
-                rm $tmparc
+                rm -f $tmparc
 
                 # create a new archive
                 tar zcpvf $tmparc * >/dev/null
