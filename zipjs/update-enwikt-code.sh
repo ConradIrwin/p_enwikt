@@ -43,14 +43,15 @@ if [ $? = 0 ] ; then
             # keep the new files and toss the old ones
             rm -rf $olddir
             mv $newdir $olddir
-        else
-            # toss the new files since they haven't changed
-            rm -rf $newdir
         fi
 
         rm $diffile
     fi
 fi
+
+# toss the new files since they haven't changed
+# or clean up after error
+rm -rf $newdir
 
 exit;
 
