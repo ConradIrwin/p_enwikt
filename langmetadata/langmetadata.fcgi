@@ -519,7 +519,8 @@ sub dumpresults {
     # XXX "my" doesn't work with fcgi!
     # XXX it will be right in dumpresults context but wrong in dumpresults_json!
     our $indent = 0;
-    our $fmt = $format eq 'jsonfm' ? 1 : 0;
+    our $fmt = $format =~ /fm$/ ? 1 : 0;
+    our $qot = $format =~ /^json/ ? 1 : 0;
 
     $callback && print $callback, '(';
     dumpresults_json($r);
@@ -546,7 +547,7 @@ sub dumpresults {
                 $i && print ",";
                 $i++ && $fmt && print "\n";
                 my $k = $h;
-                unless ($h =~ /^[a-z]+$/) {
+                if ($qot || $h !~ /^[a-z]+$/) {
                     $k = '"' . $h . '"';
                 }
                 $fmt && print '  ' x $indent;
