@@ -142,15 +142,15 @@ sub BOTNICK () { $ARGV[0] ? 'hippiebot-d' : 'hippiebot' }
 my @feeds = (
     {   url   => "http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml",
         name  => "dumps",
-        delay => 300,
     },
     {   url   => "https://bugzilla.wikimedia.org/buglist.cgi?bug_file_loc=&bug_file_loc_type=allwordssubstr&bug_id=&bugidtype=include&chfieldfrom=&chfieldto=Now&chfieldvalue=&email1=&email2=&emailtype1=substring&emailtype2=substring&field-1-0-0=product&field0-0-0=noop&keywords=&keywords_type=allwords&long_desc=&long_desc_type=substring&product=Wiktionary%20tools&query_format=advanced&remaction=&short_desc=&short_desc_type=allwordssubstr&type-1-0-0=anyexact&type0-0-0=noop&value-1-0-0=Wiktionary%20tools&value0-0-0=&votes=&title=Bug%20List&ctype=atom",
         name  => "bugs",
-        delay => 300,
     },
     {   url   => "https://jira.toolserver.org/plugins/servlet/streams?key=10350",
         name  => "toolserver",
-        delay => 300,
+    },
+    {   url   => "https://fisheye.toolserver.org/changelog/enwikt?view=all&max=30&RSS=true",
+        name  => "fisheye",
     },
 );
 
