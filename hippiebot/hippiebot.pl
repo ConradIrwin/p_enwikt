@@ -8,6 +8,7 @@ use strict;
 use utf8; # needed due to literal unicode for stripping diacritics
 
 use File::HomeDir;
+use HTML::Entities;
 use JSON;
 use LWP::Simple qw(get $ua);
 use LWP::UserAgent;
@@ -19,6 +20,8 @@ use Time::Duration;
 use URI::Escape;
 
 binmode STDOUT, ':utf8';
+
+my $tick_num = 0;
 
 # set a useragent
 $ua->agent('hippiebot');
@@ -34,71 +37,71 @@ eval '%enwikt = (' . $enwikt . ');';
 # XXX this is a full list of ISO 639-3 macrolanguages which map to language families
 # XXX plus some language family codes from ISO 639-5
 my %fam = (
-	afa => 'Afro-Asiatic',
-	alg => 'Algonquian',
-	apa => 'Apache',
-	art => 'Artificial',
-	ath => 'Athapascan',
-	aus => 'Australian',
-	bad => 'Banda',
-	bai => 'Bamileke',
-	bat => 'Baltic',
-	ber => 'Berber',
-	btk => 'Batak',
-	cai => 'Central American Indian',
-	cau => 'Caucasian',
+    afa => 'Afro-Asiatic',
+    alg => 'Algonquian',
+    apa => 'Apache',
+    art => 'Artificial',
+    ath => 'Athapascan',
+    aus => 'Australian',
+    bad => 'Banda',
+    bai => 'Bamileke',
+    bat => 'Baltic',
+    ber => 'Berber',
+    btk => 'Batak',
+    cai => 'Central American Indian',
+    cau => 'Caucasian',
     cba => 'Chibchan',
-	cel => 'Celtic',
-	cmc => 'Chamic',
-	cus => 'Cushitic',
-	day => 'Land Dayak',
-	dra => 'Dravidian',
+    cel => 'Celtic',
+    cmc => 'Chamic',
+    cus => 'Cushitic',
+    day => 'Land Dayak',
+    dra => 'Dravidian',
     esx => 'Eskimo-Aleut',
-	fiu => 'Finno-Ugrian',
-	gem => 'Germanic',
+    fiu => 'Finno-Ugrian',
+    gem => 'Germanic',
     gme => 'East Germanic',
     gmq => 'North Germanic',
-	ijo => 'Ijo',
-	inc => 'Indic',
-	ine => 'Indo-European',
-	ira => 'Iranian',
-	iro => 'Iroquoian',
+    ijo => 'Ijo',
+    inc => 'Indic',
+    ine => 'Indo-European',
+    ira => 'Iranian',
+    iro => 'Iroquoian',
     itc => 'Italic',
-	kar => 'Karen',
-	khi => 'Khoisan',
-	kro => 'Kru',
-	map => 'Austronesian',
-	mis => 'Uncoded',
-	mkh => 'Mon-Khmer',
-	mno => 'Manobo',
-	mul => 'Multiple',
-	mun => 'Munda',
-	myn => 'Mayan',
-	nah => 'Nahuatl',
-	nai => 'North American Indian',
-	nic => 'Niger-Kordofanian',
-	nub => 'Nubian',
-	oto => 'Otomian',
-	paa => 'Papuan',
-	phi => 'Philippine',
-	pra => 'Prakrit',
-	roa => 'Romance',
-	sal => 'Salishan',
-	sem => 'Semitic',
-	sio => 'Siouan',
-	sit => 'Sino-Tibetan',
-	sla => 'Slavic',
-	smi => 'Sami',
-	son => 'Songhai',
-	ssa => 'Nilo-Saharan',
-	tai => 'Tai',
+    kar => 'Karen',
+    khi => 'Khoisan',
+    kro => 'Kru',
+    map => 'Austronesian',
+    mis => 'Uncoded',
+    mkh => 'Mon-Khmer',
+    mno => 'Manobo',
+    mul => 'Multiple',
+    mun => 'Munda',
+    myn => 'Mayan',
+    nah => 'Nahuatl',
+    nai => 'North American Indian',
+    nic => 'Niger-Kordofanian',
+    nub => 'Nubian',
+    oto => 'Otomian',
+    paa => 'Papuan',
+    phi => 'Philippine',
+    pra => 'Prakrit',
+    roa => 'Romance',
+    sal => 'Salishan',
+    sem => 'Semitic',
+    sio => 'Siouan',
+    sit => 'Sino-Tibetan',
+    sla => 'Slavic',
+    smi => 'Sami',
+    son => 'Songhai',
+    ssa => 'Nilo-Saharan',
+    tai => 'Tai',
     trk => 'Turkic',
-	tup => 'Tupi',
-	tut => 'Altaic',
-	wak => 'Wakashan',
-	wen => 'Sorbian',
-	ypk => 'Yupik',
-	znd => 'Zande',
+    tup => 'Tupi',
+    tut => 'Altaic',
+    wak => 'Wakashan',
+    wen => 'Sorbian',
+    ypk => 'Yupik',
+    znd => 'Zande',
 );
 
 my $js = JSON->new->utf8(10);
@@ -133,8 +136,23 @@ unless ($json) {
     }
 }
 
-sub CHANNEL () { $ARGV[0] ? '#hippiebot' : '#wiktionary' }
+sub CHANNEL () { $ARGV[0] ? '#Wiktionarydev' : '#wiktionary' }
 sub BOTNICK () { $ARGV[0] ? 'hippiebot-d' : 'hippiebot' }
+
+my @feeds = (
+    {   url   => "http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml",
+        name  => "dumps",
+        delay => 300,
+    },
+    {   url   => "https://bugzilla.wikimedia.org/buglist.cgi?bug_file_loc=&bug_file_loc_type=allwordssubstr&bug_id=&bugidtype=include&chfieldfrom=&chfieldto=Now&chfieldvalue=&email1=&email2=&emailtype1=substring&emailtype2=substring&field-1-0-0=product&field0-0-0=noop&keywords=&keywords_type=allwords&long_desc=&long_desc_type=substring&product=Wiktionary%20tools&query_format=advanced&remaction=&short_desc=&short_desc_type=allwordssubstr&type-1-0-0=anyexact&type0-0-0=noop&value-1-0-0=Wiktionary%20tools&value0-0-0=&votes=&title=Bug%20List&ctype=atom",
+        name  => "bugs",
+        delay => 300,
+    },
+    {   url   => "https://jira.toolserver.org/plugins/servlet/streams?key=10350",
+        name  => "toolserver",
+        delay => 300,
+    },
+);
 
 # Create the component that will represent an IRC network.
 my ($irc) = POE::Component::IRC::State->spawn();
@@ -147,12 +165,19 @@ POE::Session->create(
         irc_001    => \&on_connect,
         irc_public => \&on_public,
         irc_msg    => \&on_msg,
+        feeds      => \&on_feeds,
     },
 );
 
 # The bot session has started.  Register this bot with the "magnet"
 # IRC component.  Select a nickname.  Connect to a server.
 sub bot_start {
+    my $kernel = $_[KERNEL];
+
+    # feed stuff
+    $kernel->delay( feeds => 30 );
+
+    # IRC stuff
     $irc->yield( register => "all" );
 
     $irc->yield( connect =>
@@ -287,6 +312,53 @@ sub on_msg {
 
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
+}
+
+sub on_feeds {
+    my $kernel = $_[KERNEL];
+
+    my $feed = $feeds[ $tick_num % scalar @feeds ];
+
+    my $xml = get $feed->{url};
+    decode_entities($xml);
+
+    if ($xml) {
+        my $item_num = 0;
+        my $depth = 0;
+
+        while ($xml =~ m/\G^(.*)\n?/mg) {
+            my $l = $1;
+
+            if ($l =~ /^\s*<(\/?)(?:entry|item)>\s*$/) {
+                $depth += $1 eq '';
+
+            } elsif ($depth) {
+                my $t;
+                if ($l =~ /^\s*<title>(.*)<\/title>\s*$/) {
+                    $t = $1;
+                } elsif ($l =~ /^\s*<title type="html">(.*)<\/title>\s*$/) {
+                    $t = $1;
+                    $t =~ s/<(?:[^>'"]*|(['"]).*?\1)*>//gs;
+                }
+
+                if ($t) {
+                    print STDERR "tick: $tick_num, item: $item_num, title: '$t'\n";
+                    unless (exists $feed->{hash}->{$t}) {
+                        if ($tick_num >= scalar @feeds || $item_num == 0) {
+                            $irc->yield( privmsg => CHANNEL, $feed->{name} . ': ' . $t );
+                        }
+                        $feed->{hash}->{$t} = 1;
+                    }
+                    ++ $item_num;
+                }
+            }
+        }
+    } else {
+        print STDERR "didn't get feed\n";
+    }
+
+    $kernel->delay( feeds => 60 );
+    ++ $tick_num;
 }
 
 sub do_lang {
