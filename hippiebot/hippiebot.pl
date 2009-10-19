@@ -18,6 +18,7 @@ use POE::Component::IRC::State;
 use Tie::TextDir;
 use Time::Duration;
 use URI::Escape;
+use XML::Parser::Lite;
 
 binmode STDOUT, ':utf8';
 
@@ -138,19 +139,20 @@ unless ($json) {
 
 sub CHANNEL () { $ARGV[0] ? '#Wiktionarydev' : '#wiktionary' }
 sub BOTNICK () { $ARGV[0] ? 'hippiebot-d' : 'hippiebot' }
+my $feed_delay = $ARGV[0] ? 10 : 60;
 
 my @feeds = (
-    {   url   => "http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml",
-        name  => "dumps",
+    {   url   => 'http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml',
+        name  => 'dumps',
     },
-    {   url   => "https://bugzilla.wikimedia.org/buglist.cgi?bug_file_loc=&bug_file_loc_type=allwordssubstr&bug_id=&bugidtype=include&chfieldfrom=&chfieldto=Now&chfieldvalue=&email1=&email2=&emailtype1=substring&emailtype2=substring&field-1-0-0=product&field0-0-0=noop&keywords=&keywords_type=allwords&long_desc=&long_desc_type=substring&product=Wiktionary%20tools&query_format=advanced&remaction=&short_desc=&short_desc_type=allwordssubstr&type-1-0-0=anyexact&type0-0-0=noop&value-1-0-0=Wiktionary%20tools&value0-0-0=&votes=&title=Bug%20List&ctype=atom",
-        name  => "bugs",
+    {   url   => 'https://bugzilla.wikimedia.org/buglist.cgi?bug_file_loc=&bug_file_loc_type=allwordssubstr&bug_id=&bugidtype=include&chfieldfrom=&chfieldto=Now&chfieldvalue=&email1=&email2=&emailtype1=substring&emailtype2=substring&field-1-0-0=product&field0-0-0=noop&keywords=&keywords_type=allwords&long_desc=&long_desc_type=substring&product=Wiktionary%20tools&query_format=advanced&remaction=&short_desc=&short_desc_type=allwordssubstr&type-1-0-0=anyexact&type0-0-0=noop&value-1-0-0=Wiktionary%20tools&value0-0-0=&votes=&title=Bug%20List&ctype=atom',
+        name  => 'bugs',
     },
-    {   url   => "https://jira.toolserver.org/plugins/servlet/streams?key=10350",
-        name  => "toolserver",
+    {   url   => 'https://jira.toolserver.org/plugins/servlet/streams?key=10350',
+        name  => 'toolserver',
     },
-    {   url   => "https://fisheye.toolserver.org/changelog/enwikt?view=all&max=30&RSS=true",
-        name  => "fisheye",
+    {   url   => 'https://fisheye.toolserver.org/changelog/enwikt?view=all&max=30&RSS=true',
+        name  => 'svn',
     },
 );
 
@@ -175,7 +177,7 @@ sub bot_start {
     my $kernel = $_[KERNEL];
 
     # feed stuff
-    $kernel->delay( feeds => 30 );
+    $kernel->delay( feeds => $feed_delay );
 
     # IRC stuff
     $irc->yield( register => "all" );
@@ -320,44 +322,58 @@ sub on_feeds {
     my $feed = $feeds[ $tick_num % scalar @feeds ];
 
     my $xml = get $feed->{url};
-    decode_entities($xml);
 
     if ($xml) {
-        my $item_num = 0;
-        my $depth = 0;
-
-        while ($xml =~ m/\G^(.*)\n?/mg) {
-            my $l = $1;
-
-            if ($l =~ /^\s*<(\/?)(?:entry|item)>\s*$/) {
-                $depth += $1 eq '';
-
-            } elsif ($depth) {
-                my $t;
-                if ($l =~ /^\s*<title>(.*)<\/title>\s*$/) {
-                    $t = $1;
-                } elsif ($l =~ /^\s*<title type="html">(.*)<\/title>\s*$/) {
-                    $t = $1;
-                    $t =~ s/<(?:[^>'"]*|(['"]).*?\1)*>//gs;
-                }
-
-                if ($t) {
-                    print STDERR "tick: $tick_num, item: $item_num, title: '$t'\n";
-                    unless (exists $feed->{hash}->{$t}) {
-                        if ($tick_num >= scalar @feeds || $item_num == 0) {
-                            $irc->yield( privmsg => CHANNEL, $feed->{name} . ': ' . $t );
-                        }
-                        $feed->{hash}->{$t} = 1;
+        my $in = 0;
+        my $txt;
+        my @titles;
+        my $parser = XML::Parser::Lite->new(
+            Handlers => {
+                Start => sub {
+                    my (undef, $tag) = @_;
+                    #print STDOUT "** start '$tag'\n";
+                    $txt = '';
+                    ++ $in if $tag eq 'entry' || $tag eq 'item';
+                },
+                Char => sub {
+                    my (undef, $c) = @_;
+                    #print STDOUT "** char ($in) '$c'\n";
+                    $txt .= $c if $in;
+                },
+                End => sub {
+                    my (undef, $tag) = @_;
+                    #print STDOUT "** end '$tag'\n";
+                    if ($in && $tag eq 'title') {
+                        push @titles, $txt;
                     }
-                    ++ $item_num;
+                    $in -= $tag eq 'entry' || $tag eq 'item';
+                    $txt = '';
                 }
             }
+        );
+
+        $parser->parse($xml);
+
+        for (my $i = 0; $i < scalar @titles; ++$i) {
+            my $t = $titles[$i];
+            $t =~ s/(\s\r\n)+/ /sg;
+            decode_entities($t);
+            $t =~ s/<(?:[^>'"]*|(['"]).*?\1)*>//gs;
+
+            print STDERR "tick: $tick_num, item: $i, title: '$t'\n";
+            unless (exists $feed->{hash}->{$t}) {
+                if ($tick_num >= scalar @feeds || $i == 0) {
+                    $irc->yield( privmsg => CHANNEL, $feed->{name} . ': ' . $t );
+                }
+                $feed->{hash}->{$t} = 1;
+            }
         }
+
     } else {
         print STDERR "didn't get feed\n";
     }
 
-    $kernel->delay( feeds => 60 );
+    $kernel->delay( feeds => $feed_delay );
     ++ $tick_num;
 }
 
