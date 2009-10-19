@@ -143,7 +143,10 @@ my $feed_delay = $ARGV[0] ? 10 : 60;
 
 my @feeds = (
     {   url   => 'http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml',
-        name  => 'dumps',
+        name  => 'official dumps',
+    },
+    {   url   => 'http://www.devtionary.org/cgi-bin/feed.pl',
+        name  => 'daily dumps',
     },
     {   url   => 'https://bugzilla.wikimedia.org/buglist.cgi?bug_file_loc=&bug_file_loc_type=allwordssubstr&bug_id=&bugidtype=include&chfieldfrom=&chfieldto=Now&chfieldvalue=&email1=&email2=&emailtype1=substring&emailtype2=substring&field-1-0-0=product&field0-0-0=noop&keywords=&keywords_type=allwords&long_desc=&long_desc_type=substring&product=Wiktionary%20tools&query_format=advanced&remaction=&short_desc=&short_desc_type=allwordssubstr&type-1-0-0=anyexact&type0-0-0=noop&value-1-0-0=Wiktionary%20tools&value0-0-0=&votes=&title=Bug%20List&ctype=atom',
         name  => 'bugs',
@@ -356,7 +359,8 @@ sub on_feeds {
 
         for (my $i = 0; $i < scalar @titles; ++$i) {
             my $t = $titles[$i];
-            $t =~ s/(\s\r\n)+/ /sg;
+            $t =~ s/(\s|\r|\n)+/ /sg;
+            $t =~ s/\s+$//;
             decode_entities($t);
             $t =~ s/<(?:[^>'"]*|(['"]).*?\1)*>//gs;
 
