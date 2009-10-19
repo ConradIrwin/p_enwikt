@@ -157,6 +157,9 @@ my @feeds = (
     {   url   => 'https://fisheye.toolserver.org/changelog/enwikt?view=all&max=30&RSS=true',
         name  => 'svn',
     },
+    {   url   => 'http://www.xvpa.com/wotd/?feed=atom',
+        name  => 'wotd',
+    },
 );
 
 # Create the component that will represent an IRC network.
