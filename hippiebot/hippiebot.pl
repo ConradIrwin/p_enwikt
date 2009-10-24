@@ -9,18 +9,23 @@ use utf8; # needed due to literal unicode for stripping diacritics
 
 use File::HomeDir;
 use HTML::Entities;
-use JSON;
+use JSON::PP;
 use LWP::Simple qw(get $ua);
 use LWP::UserAgent;
 use POE;
 use POE::Component::IRC::Common qw(irc_to_utf8);
 use POE::Component::IRC::State;
+use Getopt::Std;
 use Tie::TextDir;
 use Time::Duration;
 use URI::Escape;
 use XML::Parser::Lite;
 
 binmode STDOUT, ':utf8';
+
+our($opt_c, $opt_d, $opt_F, $opt_n);
+
+getopts('c:dFn:');
 
 my $tick_num = 0;
 
@@ -105,14 +110,14 @@ my %fam = (
     znd => 'Zande',
 );
 
-my $js = JSON->new;
+my $js = JSON::PP->new;
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %three2one;
 my %name2code;
 
 # TODO handle error
-my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?fields=iso3,isoname,n';
+my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&fields=iso3,isoname,n';
 
 unless ($json) {
     print STDERR "couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
@@ -137,9 +142,9 @@ unless ($json) {
     }
 }
 
-sub CHANNEL () { $ARGV[0] ? '#Wiktionarydev' : '#wiktionary' }
-sub BOTNICK () { $ARGV[0] ? 'hippiebot-d' : 'hippiebot' }
-my $feed_delay = $ARGV[0] ? 10 : 60;
+sub CHANNEL () { defined $opt_c ? $opt_c : defined $opt_d ? '#Wiktionarydev' : '#wiktionary' }
+sub BOTNICK () { defined $opt_n ? $opt_n : defined $opt_d ? 'hippiebot-d' : 'hippiebot' }
+my $feed_delay = defined $opt_d ? 10 : 60;
 
 my @feeds = (
     {   url   => 'http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml',
@@ -161,6 +166,8 @@ my @feeds = (
         name  => 'wotd',
     },
 );
+
+my @dunno_it_all;
 
 # Create the component that will represent an IRC network.
 my ($irc) = POE::Component::IRC::State->spawn();
@@ -270,6 +277,80 @@ sub on_public {
 
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
+
+    elsif ( $nick eq 'know-it-all' ) {
+        my ($defineresp, $known);
+
+        if ( $msg eq 'This page doesnt seem to exist.' ) {
+            $defineresp = 1;
+            $known = 0;
+
+        } elsif ( $msg =~ /^'.*' is .*: .*\.$/ ) {
+            $defineresp = 1;
+            $known = 1;
+        }
+
+        if ($defineresp) {
+            print " [$ts] <$nick:$channel> $msg\n";
+
+            my $term = shift @dunno_it_all;
+
+            my $resp;
+            
+            unless ($known) {
+                my $apires;
+                my $html;
+                my @a;
+                my %didyoumean;
+
+                $html = get 'http://www.google.com.au/search?q=' . $term;
+
+                ++ $didyoumean{$1} if $html =~ /class=spell><b><i>(.*?)<\/i><\/b><\/a>/;
+
+                $html = get 'http://www.merriam-webster.com/dictionary/' . $term;
+
+                if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
+                    if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
+                       ++ $didyoumean{$_} for (@a);
+                   }
+                }
+
+                $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
+
+                if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
+                    ++ $didyoumean{$_} for (@a);
+                }
+
+                for my $site (('wiktionary', 'wikipedia')) {
+                    my $json = get 'http://en.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
+
+                    if ($json) {
+                        $apires = $js->decode($json);
+                        if (exists $apires->{query} && exists $apires->{query}->{searchinfo} && exists $apires->{query}->{searchinfo}->{suggestion}) {
+                            ++ $didyoumean{$apires->{query}->{searchinfo}->{suggestion}};
+                        }
+                    }
+                }
+
+                my $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=English&term=' . $term;
+
+                if ($json) {
+                    $apires = $js->allow_barekey->decode($json);
+
+                    ++ $didyoumean{$apires->{next}->[0]} if exists $apires->{next};
+                    ++ $didyoumean{$apires->{prev}->[0]} if exists $apires->{prev};
+                }
+
+                if (%didyoumean) {
+                    $resp = 'did you mean ' . join(', ', sort {$didyoumean{$b} <=> $didyoumean{$a}} keys %didyoumean) . ' ?';
+                } else {
+                    $resp = 'I have little to suggest.';
+                }
+            }
+
+            $resp && $irc->yield( privmsg => CHANNEL, $resp );
+        }
+    }
 }
 
 # The bot has received a private message.  Parse it for commands, and
@@ -337,18 +418,15 @@ sub on_feeds {
             Handlers => {
                 Start => sub {
                     my (undef, $tag) = @_;
-                    #print STDOUT "** start '$tag'\n";
                     $txt = '';
                     ++ $in if $tag eq 'entry' || $tag eq 'item';
                 },
                 Char => sub {
                     my (undef, $c) = @_;
-                    #print STDOUT "** char ($in) '$c'\n";
                     $txt .= $c if $in;
                 },
                 End => sub {
                     my (undef, $tag) = @_;
-                    #print STDOUT "** end '$tag'\n";
                     if ($in && $tag eq 'title') {
                         push @titles, $txt;
                     }
@@ -367,17 +445,26 @@ sub on_feeds {
             decode_entities($t);
             $t =~ s/<(?:[^>'"]*|(['"]).*?\1)*>//gs;
 
-            print STDERR "tick: $tick_num, item: $i, title: '$t'\n";
-            unless (exists $feed->{hash}->{$t}) {
-                if ($tick_num >= scalar @feeds || $i == 0) {
-                    $irc->yield( privmsg => CHANNEL, $feed->{name} . ': ' . $t );
-                }
-                $feed->{hash}->{$t} = 1;
+            my $announce = 0;
+
+            # when starting up, the newist item, unless -F
+            # after that, all *new* items
+
+            if ($tick_num < scalar @feeds) {
+                $announce = $i == 0 && !$opt_F;
+            } else {
+                $announce = ! exists $feed->{hash}->{$t};
             }
+
+            $opt_d && !$opt_F && print STDERR 'tick: ', $tick_num, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
+
+            $announce && $irc->yield( privmsg => CHANNEL, $feed->{name} . ': ' . $t );
+
+            $feed->{hash}->{$t} = 1;
         }
 
     } else {
-        print STDERR "didn't get feed\n";
+        print STDERR "didn't get feed '$feed->{name}' ($!)\n";
     }
 
     $kernel->delay( feeds => $feed_delay );
@@ -648,7 +735,7 @@ sub do_toc {
     my $ok = 0;
     my $resp = $page . ': ';
 
-    my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=sections&page=';
+    my $uri = 'http://en.wiktionary.org/w/api.php?action=parse&prop=sections&page=';
 
     my $data;
     my $json = get $uri . $page;
@@ -733,7 +820,7 @@ sub do_define {
 
     if ($channel) {
         if (grep $_ eq 'know-it-all', $irc->channel_list($channel)) {
-            # define know it all
+            push @dunno_it_all, $term;
         } else {
             $ok = 1;
             # define no know it all
