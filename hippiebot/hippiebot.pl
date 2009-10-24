@@ -105,7 +105,7 @@ my %fam = (
     znd => 'Zande',
 );
 
-my $js = JSON->new->utf8(10);
+my $js = JSON->new;
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %three2one;
@@ -117,7 +117,7 @@ my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?fields=iso3
 unless ($json) {
     print STDERR "couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
 } else {
-    my $data = $js->allow_barekey->decode($json);
+    my $data = $js->decode($json);
 
     while (my ($k, $v) = each %$data) {
         $three2one{$v->{iso3}} = $k if (exists $v->{iso3});
@@ -402,7 +402,7 @@ sub do_lang {
     my $json = get $newuri . $codes;
 
     if ($json) {
-        $metadata = $js->allow_barekey->decode($json);
+        $metadata = $js->decode($json);
     } else {
         print STDERR "couldn't get data on language codes ($codes) from langmetadata sever\n";
     }
