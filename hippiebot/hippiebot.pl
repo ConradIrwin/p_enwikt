@@ -9,7 +9,7 @@ use utf8; # needed due to literal unicode for stripping diacritics
 
 use File::HomeDir;
 use HTML::Entities;
-use JSON::PP;
+use JSON -support_by_pp;
 use LWP::Simple qw(get $ua);
 use LWP::UserAgent;
 use POE;
@@ -110,7 +110,7 @@ my %fam = (
     znd => 'Zande',
 );
 
-my $js = JSON::PP->new;
+my $js = JSON->new;
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %three2one;
@@ -335,7 +335,7 @@ sub on_public {
                 my $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=English&term=' . $term;
 
                 if ($json) {
-                    $res = $js->allow_barekey->decode($json);
+                    $res = $js->decode($json);
 
                     ++ $dym{$res->{next}->[0]} if exists $res->{next};
                     ++ $dym{$res->{prev}->[0]} if exists $res->{prev};
