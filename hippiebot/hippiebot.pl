@@ -16,12 +16,15 @@ use POE;
 use POE::Component::IRC::Common qw(irc_to_utf8);
 use POE::Component::IRC::State;
 use Getopt::Std;
+use Sys::Hostname;
 use Tie::TextDir;
 use Time::Duration;
 use URI::Escape;
 use XML::Parser::Lite;
 
 binmode STDOUT, ':utf8';
+
+print STDERR "** running on $^O / ", hostname, "\n";
 
 our($opt_c, $opt_d, $opt_F, $opt_n);
 
@@ -111,6 +114,10 @@ my %fam = (
 );
 
 my $js = JSON->new;
+
+print STDERR '** using ', $js->backend, " back end\n";
+
+$js = $js->utf8 if $js->backend eq 'JSON::PP';
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %three2one;
