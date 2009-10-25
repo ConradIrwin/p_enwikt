@@ -117,7 +117,9 @@ my $js = JSON->new;
 
 print STDERR '** using ', $js->backend, " back end\n";
 
-$js = $js->utf8 if $js->backend eq 'JSON::PP';
+print STDERR "** LWP::Simple version: $LWP::Simple::VERSION\n";
+
+$js = $js->utf8 if $LWP::Simple::VERSION < 5.827;
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %three2one;
