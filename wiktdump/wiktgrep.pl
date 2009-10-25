@@ -6,6 +6,7 @@
 
 use strict;
 use Encode;
+use Getopt::Std;
 use HTML::Entities;
 use Unicode::Normalize;
 
@@ -46,6 +47,10 @@ my %nses = (
     'Citations talk' => 115,
 );
 
+our($opt_b, $opt_h, $opt_t);
+
+getopts('bht');
+
 my ($needle, $df);
 
 if (scalar @ARGV != 2) {
@@ -75,6 +80,11 @@ my $tetend;
 while ($r = <DFH>) {
     if ($r =~ /<title>(.*)<\/title>/) {
         $title = $1;
+
+        if ($opt_t && $title =~ /$needle/) {
+            print $., '||', $title, "\n";
+        }
+
         $ns = 0;
         my $colon = index($title, ':');
         if ($colon != -1) {
@@ -102,6 +112,13 @@ while ($r = <DFH>) {
         if ($ns == 0 && $c =~ /^(=+)\s*([^=]*?)\s*(=+)\s*$/) {
             my $head = $2;
             my $level = length $1 <= length $3 ? length $1 : length $3;
+
+            if ($opt_h && $head =~ /$needle/) {
+                print $., '||', $title, '||';
+                $ns == 0 && print $lang, '||';
+                print $c;
+            }
+
             if ($head =~ /^\[\[(.*)\]\]$/) {
                 $head = $1;
             }
@@ -114,7 +131,7 @@ while ($r = <DFH>) {
 
 
 
-        elsif ($c =~ /$needle/) {
+        elsif ($opt_b && $c =~ /$needle/) {
             print $., '||', $title, '||';
             $ns == 0 && print $lang, '||';
             print $c;
