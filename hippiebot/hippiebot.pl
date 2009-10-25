@@ -322,66 +322,123 @@ sub on_public {
                     ++ $script{$s}
                 }
 
-                my %langs = ( 'en' => 1 );
+                my %codes;
+                my %names;
 
                 for my $s (keys %script) {
                     if ($s eq 'Arabic') {
-                        ++ $langs{$_} for ('ar', 'fa', 'ur');
+                        ++ $codes{$_} for ('ar', 'fa', 'ur');
+                        ++ $names{$_} for ('Arabic', 'Persian', 'Urdu');
                     } elsif ($s eq 'Armenian') {
-                        ++ $langs{$_} for ('hy');
+                        ++ $codes{$_} for ('hy');
+                        ++ $names{$_} for ('Armenian');
+                    } elsif ($s eq 'Devanagari') {
+                        ++ $codes{$_} for ('hi', 'sa');
+                        ++ $names{$_} for ('Hindi', 'Sanskrit');
                     } elsif ($s eq 'Cyrillic') {
-                        ++ $langs{$_} for ('bg', 'ru', 'uk');
+                        ++ $codes{$_} for ('bg', 'ru', 'sr', 'uk');
+                        ++ $names{$_} for ('Bulgarian', 'Russian', 'Serbian', 'Ukrainian');
                     } elsif ($s eq 'Georgian') {
-                        ++ $langs{$_} for ('ka');
-                    } elsif ($s eq 'Hebrew') {
-                        ++ $langs{$_} for ('he', 'yi');
+                        ++ $codes{$_} for ('ka');
+                        ++ $names{$_} for ('Georgian');
                     } elsif ($s eq 'Greek') {
-                        ++ $langs{$_} for ('el');
+                        ++ $codes{$_} for ('el');
+                        ++ $names{$_} for ('Greek', 'Ancient Gree');
+                    } elsif ($s eq 'Han') {
+                        ++ $codes{$_} for ('zh', 'ja');
+                        ++ $names{$_} for ('Chinese', 'Korean', 'Mandarin', 'Japanese');
+                    } elsif ($s eq 'Hangul') {
+                        ++ $codes{$_} for ('ko');
+                        ++ $names{$_} for ('Korean');
+                    } elsif ($s eq 'Hebrew') {
+                        ++ $codes{$_} for ('he', 'yi');
+                        ++ $names{$_} for ('Hebrew', 'Yiddish');
+                    } elsif ($s eq 'Hiragana') {
+                        ++ $codes{$_} for ('ja');
+                        ++ $names{$_} for ('Japanese');
+                    } elsif ($s eq 'Katakana') {
+                        ++ $codes{$_} for ('ain', 'ja');
+                        ++ $names{$_} for ('Ainu', 'Japanese');
+                    } elsif ($s eq 'Lao') {
+                        ++ $codes{$_} for ('lo');
+                        ++ $names{$_} for ('Lao');
+                    } elsif ($s eq 'Latin') {
+                        ++ $codes{$_} for ('en', 'de', 'fr', 'es');
+                        ++ $names{$_} for ('English', 'German', 'French', 'Spanish');
+                    } elsif ($s eq 'Thai') {
+                        ++ $codes{$_} for ('th');
+                        ++ $names{$_} for ('Thai');
+                    } else {
+                        print STDERR "** unhandled script: $s\n";
                     }
                 }
 
-                for my $lang (keys %langs) {
-                    if ($lang eq 'en') {
-                        $term = uri_escape_utf8($term);
+                $term = uri_escape_utf8($term);
 
-                        $html = get 'http://www.google.com.au/search?q=' . $term;
+                for my $lc (keys %codes) {
+                    print STDERR "g-$lc\n";
+                    $html = get 'http://www.google.com.au/search?hl=' . $lc . '&q=' . $term;
 
-                        ++ $dym{$1} if $html =~ /class=spell><b><i>(.*?)<\/i><\/b><\/a>/;
+                    if ($html =~ /class="?spell"?><b><i>(.*?)<\/i><\/b><\/a>/) {
+                        my $t = decode_entities($1);
+                        print STDERR "\t$t\n";
+                        ++ $dym{$t};
+                    }
 
+                    if ($lc eq 'en') {
+                        print STDERR "mw-$lc\n";
                         $html = get 'http://www.merriam-webster.com/dictionary/' . $term;
 
                         if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
                             if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
-                               ++ $dym{$_} for (@a);
+                               for (@a) {
+                                    print STDERR "\t$_\n";
+                                   ++ $dym{$_};
+                                }
                            }
                         }
 
+                        print STDERR "enc-$lc\n";
                         $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
 
                         if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
-                            ++ $dym{$_} for (@a);
+                           for (@a) {
+                                print STDERR "\t$_\n";
+                               ++ $dym{$_};
+                            }
                         }
                     }
 
                     for my $site (('wiktionary', 'wikipedia')) {
-                        my $json = get 'http://' . $lang . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
+                        print STDERR "$site-$lc\n";
+                        my $json = get 'http://' . $lc . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
 
                         if ($json) {
                             $res = $js->decode($json);
                             if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
+                                print STDERR "\t$res->{query}->{searchinfo}->{suggestion}\n";
                                 ++ $dym{$res->{query}->{searchinfo}->{suggestion}};
                             }
                         }
                     }
                 }
 
-                my $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=English&term=' . $term;
+                for my $ln (keys %names) {
+                    print STDERR "near-$ln\n";
+                    my $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=' . $ln . '&term=' . $term;
 
-                if ($json) {
-                    $res = $js->decode($json);
+                    if ($json) {
+                        $res = $js->decode($json);
 
-                    ++ $dym{$res->{next}->[0]} if exists $res->{next};
-                    ++ $dym{$res->{prev}->[0]} if exists $res->{prev};
+                        if (exists $res->{prev}) {
+                            print "\t$res->{prev}->[0]\n";
+                            ++ $dym{$res->{prev}->[0]}
+                        }
+                        if (exists $res->{next}) {
+                            print "\t$res->{next}->[0]\n";
+                            ++ $dym{$res->{next}->[0]}
+                        }
+                    }
                 }
 
                 if (%dym) {
