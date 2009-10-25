@@ -19,10 +19,12 @@ use Getopt::Std;
 use Sys::Hostname;
 use Tie::TextDir;
 use Time::Duration;
+use Unicode::UCD 'charscript';
 use URI::Escape;
 use XML::Parser::Lite;
 
 binmode STDOUT, ':utf8';
+binmode STDERR, ':utf8';
 
 print STDERR "** running on $^O / ", hostname, "\n";
 
@@ -302,7 +304,7 @@ sub on_public {
         if ($defineresp) {
             print " [$ts] <$nick:$channel> $msg\n";
 
-            my $term = uri_escape_utf8(shift @dunno_it_all);
+            my $term = shift @dunno_it_all;
 
             my $resp;
             
@@ -312,31 +314,63 @@ sub on_public {
                 my @a;
                 my %dym;
 
-                $html = get 'http://www.google.com.au/search?q=' . $term;
+                my %script;
 
-                ++ $dym{$1} if $html =~ /class=spell><b><i>(.*?)<\/i><\/b><\/a>/;
-
-                $html = get 'http://www.merriam-webster.com/dictionary/' . $term;
-
-                if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
-                    if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
-                       ++ $dym{$_} for (@a);
-                   }
+                my @ch = split //, $term;
+                for my $ch (@ch) {
+                    my $s = charscript(ord $ch);
+                    ++ $script{$s}
                 }
 
-                $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
+                my %langs = ( 'en' => 1 );
 
-                if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
-                    ++ $dym{$_} for (@a);
+                for my $s (keys %script) {
+                    if ($s eq 'Arabic') {
+                        ++ $langs{$_} for ('ar', 'fa', 'ur');
+                    } elsif ($s eq 'Armenian') {
+                        ++ $langs{$_} for ('hy');
+                    } elsif ($s eq 'Cyrillic') {
+                        ++ $langs{$_} for ('bg', 'ru', 'uk');
+                    } elsif ($s eq 'Georgian') {
+                        ++ $langs{$_} for ('ka');
+                    } elsif ($s eq 'Hebrew') {
+                        ++ $langs{$_} for ('he', 'yi');
+                    } elsif ($s eq 'Greek') {
+                        ++ $langs{$_} for ('el');
+                    }
                 }
 
-                for my $site (('wiktionary', 'wikipedia')) {
-                    my $json = get 'http://en.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
+                for my $lang (keys %langs) {
+                    if ($lang eq 'en') {
+                        $term = uri_escape_utf8($term);
 
-                    if ($json) {
-                        $res = $js->decode($json);
-                        if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
-                            ++ $dym{$res->{query}->{searchinfo}->{suggestion}};
+                        $html = get 'http://www.google.com.au/search?q=' . $term;
+
+                        ++ $dym{$1} if $html =~ /class=spell><b><i>(.*?)<\/i><\/b><\/a>/;
+
+                        $html = get 'http://www.merriam-webster.com/dictionary/' . $term;
+
+                        if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
+                            if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
+                               ++ $dym{$_} for (@a);
+                           }
+                        }
+
+                        $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
+
+                        if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
+                            ++ $dym{$_} for (@a);
+                        }
+                    }
+
+                    for my $site (('wiktionary', 'wikipedia')) {
+                        my $json = get 'http://' . $lang . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
+
+                        if ($json) {
+                            $res = $js->decode($json);
+                            if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
+                                ++ $dym{$res->{query}->{searchinfo}->{suggestion}};
+                            }
                         }
                     }
                 }
