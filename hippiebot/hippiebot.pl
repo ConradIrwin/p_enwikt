@@ -293,41 +293,41 @@ sub on_public {
         if ($defineresp) {
             print " [$ts] <$nick:$channel> $msg\n";
 
-            my $term = shift @dunno_it_all;
+            my $term = uri_escape_utf8(shift @dunno_it_all);
 
             my $resp;
             
             unless ($known) {
-                my $apires;
+                my $res;
                 my $html;
                 my @a;
-                my %didyoumean;
+                my %dym;
 
                 $html = get 'http://www.google.com.au/search?q=' . $term;
 
-                ++ $didyoumean{$1} if $html =~ /class=spell><b><i>(.*?)<\/i><\/b><\/a>/;
+                ++ $dym{$1} if $html =~ /class=spell><b><i>(.*?)<\/i><\/b><\/a>/;
 
                 $html = get 'http://www.merriam-webster.com/dictionary/' . $term;
 
                 if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
                     if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
-                       ++ $didyoumean{$_} for (@a);
+                       ++ $dym{$_} for (@a);
                    }
                 }
 
                 $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
 
                 if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
-                    ++ $didyoumean{$_} for (@a);
+                    ++ $dym{$_} for (@a);
                 }
 
                 for my $site (('wiktionary', 'wikipedia')) {
                     my $json = get 'http://en.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
 
                     if ($json) {
-                        $apires = $js->decode($json);
-                        if (exists $apires->{query} && exists $apires->{query}->{searchinfo} && exists $apires->{query}->{searchinfo}->{suggestion}) {
-                            ++ $didyoumean{$apires->{query}->{searchinfo}->{suggestion}};
+                        $res = $js->decode($json);
+                        if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
+                            ++ $dym{$res->{query}->{searchinfo}->{suggestion}};
                         }
                     }
                 }
@@ -335,14 +335,14 @@ sub on_public {
                 my $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=English&term=' . $term;
 
                 if ($json) {
-                    $apires = $js->allow_barekey->decode($json);
+                    $res = $js->allow_barekey->decode($json);
 
-                    ++ $didyoumean{$apires->{next}->[0]} if exists $apires->{next};
-                    ++ $didyoumean{$apires->{prev}->[0]} if exists $apires->{prev};
+                    ++ $dym{$res->{next}->[0]} if exists $res->{next};
+                    ++ $dym{$res->{prev}->[0]} if exists $res->{prev};
                 }
 
-                if (%didyoumean) {
-                    $resp = 'did you mean ' . join(', ', sort {$didyoumean{$b} <=> $didyoumean{$a}} keys %didyoumean) . ' ?';
+                if (%dym) {
+                    $resp = 'did you mean ' . join(', ', sort {$dym{$b} <=> $dym{$a}} keys %dym) . ' ?';
                 } else {
                     $resp = 'I have little to suggest.';
                 }
