@@ -728,7 +728,7 @@ sub metadata_to_english {
         if (exists $l->{isoscope}) {
             $resp .= 'It\'s in ISO';
         } elsif (exists $l->{wm}) {
-            $resp .= 'It\'s a WikiMedi extension to ISO';
+            $resp .= 'It\'s a WikiMedia extension to ISO';
         } else {
             $resp .= 'It\'s an en.wiktionary extension to ISO';
         }
