@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
-# This is a simple IRC bot that knows about languages. It responds to:
+# This was a simple IRC bot that knows about languages.
+# It originally responded to:
 # "lang <code>", "dumps", "random <language code|language name>"
 
 use warnings;
@@ -309,8 +310,9 @@ sub on_public {
             my $resp;
             
             unless ($known) {
-                my $res;
                 my $html;
+                my $json;
+                my $res;
                 my @a;
                 my %dym;
 
@@ -391,27 +393,27 @@ sub on_public {
 
                         if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
                             if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
-                               for (@a) {
+                                for (@a) {
                                     print STDERR "\t$_\n";
-                                   ++ $dym{$_};
+                                    $dym{$_} += 0.5;
                                 }
-                           }
+                            }
                         }
 
                         print STDERR "enc-$lc\n";
                         $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
 
                         if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
-                           for (@a) {
+                            for (@a) {
                                 print STDERR "\t$_\n";
-                               ++ $dym{$_};
+                                ++ $dym{$_};
                             }
                         }
                     }
 
                     for my $site (('wiktionary', 'wikipedia')) {
                         print STDERR "$site-$lc\n";
-                        my $json = get 'http://' . $lc . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
+                        $json = get 'http://' . $lc . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
 
                         if ($json) {
                             $res = $js->decode($json);
@@ -425,24 +427,49 @@ sub on_public {
 
                 for my $ln (keys %names) {
                     print STDERR "near-$ln\n";
-                    my $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=' . $ln . '&term=' . $term;
+                    $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=' . $ln . '&term=' . $term;
 
                     if ($json) {
                         $res = $js->decode($json);
 
                         if (exists $res->{prev}) {
                             print "\t$res->{prev}->[0]\n";
-                            ++ $dym{$res->{prev}->[0]}
+                            $dym{$res->{prev}->[0]} += 0.5;
                         }
                         if (exists $res->{next}) {
                             print "\t$res->{next}->[0]\n";
-                            ++ $dym{$res->{next}->[0]}
+                            $dym{$res->{next}->[0]} += 0.5;
                         }
                     }
                 }
 
-                if (%dym) {
-                    $resp = 'did you mean ' . join(', ', sort {$dym{$b} <=> $dym{$a}} keys %dym) . ' ?';
+                # now check which of these are blue links on enwikt
+                print STDERR "bluelink-check\n";
+                $json = get 'http://en.wiktionary.org/w/api.php?format=json&action=query&titles=' . join('|', keys %dym);
+
+                if ($json) {
+                    $res = $js->decode($json);
+
+                    if (exists $res->{query} && exists $res->{query}->{pages}) {
+                        for my $d (values %{$res->{query}->{pages}}) {
+                            print "\t$d->{title}\n";
+                            $dym{ $d->{title} } += 2 unless exists $d->{missing};
+                        }
+                    }
+                }
+
+                # let's see how they rated
+                my $sugg = '';
+                for my $t (sort {$dym{$b} <=> $dym{$a}} keys %dym) {
+                    print STDERR "$dym{$t} -> '$t'\n";
+                    if (length $sugg < 48) {
+                        $sugg .= ', ' if $sugg ne '';
+                        $sugg .= $t;
+                    }
+                }
+
+                if ($sugg) {
+                    $resp = 'did you mean ' . $sugg . ' ?';
                 } else {
                     $resp = 'I have little to suggest.';
                 }
