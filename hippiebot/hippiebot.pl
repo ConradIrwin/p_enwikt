@@ -444,35 +444,37 @@ sub on_public {
                 }
 
                 # now check which of these are blue links on enwikt
-                print STDERR "bluelink-check\n";
-                $json = get 'http://en.wiktionary.org/w/api.php?format=json&action=query&titles=' . join('|', keys %dym);
+                my $sugg = '';
+                if (%dym) {
+                    print STDERR "bluelink-check\n";
+                    $json = get 'http://en.wiktionary.org/w/api.php?format=json&action=query&titles=' . join('|', keys %dym);
 
-                my %col;
+                    my %col;
 
-                if ($json) {
-                    $res = $js->decode($json);
+                    if ($json) {
+                        $res = $js->decode($json);
 
-                    if (exists $res->{query} && exists $res->{query}->{pages}) {
-                        for my $d (values %{$res->{query}->{pages}}) {
-                            my $t = $d->{title};
-                            print "\t$t\n";
-                            if (exists $d->{missing}) {
-                                $col{$t} = '04';     # red
-                            } else {
-                                $dym{$t} += 2;
-                                $col{$t} = '02';     # blue
+                        if (exists $res->{query} && exists $res->{query}->{pages}) {
+                            for my $d (values %{$res->{query}->{pages}}) {
+                                my $t = $d->{title};
+                                print "\t$t\n";
+                                if (exists $d->{missing}) {
+                                    $col{$t} = '04';     # red
+                                } else {
+                                    $dym{$t} += 2;
+                                    $col{$t} = '02';     # blue
+                                }
                             }
                         }
                     }
-                }
 
-                # let's see how they rated
-                my $sugg = '';
-                for my $t (sort {$dym{$b} <=> $dym{$a}} keys %dym) {
-                    print STDERR "$dym{$t} -> '$t' ($col{$t})\n";
-                    if (length $sugg < 48) {
-                        $sugg .= ", " if $sugg ne '';
-                        $sugg .= "\003$col{$t}$t\00301";
+                    # let's see how they rated
+                    for my $t (sort {$dym{$b} <=> $dym{$a}} keys %dym) {
+                        print STDERR "$dym{$t} -> '$t' ($col{$t})\n";
+                        if (length $sugg < 48) {
+                            $sugg .= ", " if $sugg ne '';
+                            $sugg .= "\003$col{$t}$t\00301";
+                        }
                     }
                 }
 
