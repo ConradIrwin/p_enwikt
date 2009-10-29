@@ -297,7 +297,8 @@ sub on_public {
             $defineresp = 1;
             $known = 0;
 
-        } elsif ( $msg =~ /^'.*' is .*: .*\.$/ ) {
+        # long definitions are cut short so don't check for the final full stop
+        } elsif ( $msg =~ /^'.*' is .*: / ) {
             $defineresp = 1;
             $known = 1;
         }
