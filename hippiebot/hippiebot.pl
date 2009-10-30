@@ -813,11 +813,15 @@ sub do_did_you_mean{
 
     my $term = shift @dunno_it_all;
     
-    my $html;
-    my $json;
-    my $res;
-    my @a;
-    my %dym;
+    my %dym;        # stores weighted suggestions
+    my $sugg = '';  # the compiled and ordered and coloured and trimmed suggestion text
+
+    my $html;       # used for getting and scraping web pages
+    my @a;          # used for results of scraping web pages
+    my $json;       # used for getting and parsing JSON
+    my $res;        # used for results of parsing JSON
+
+    ## which scripts are used in this term
 
     my %script;
 
@@ -826,6 +830,9 @@ sub do_did_you_mean{
         my $s = charscript(ord $ch);
         ++ $script{$s}
     }
+
+    ## heuristics to decide languages based on scripts
+    ## TODO use langmetadata server
 
     my %codes;
     my %names;
@@ -878,9 +885,14 @@ sub do_did_you_mean{
         }
     }
 
+    # we no longer need the UTF-8 term so encode it for use in URLs
     $term = uri_escape_utf8($term);
 
+    # decide which sites to scrape or call based on language code
     for my $lc (keys %codes) {
+
+        # Google does many languages and uses language codes
+
         print STDERR "g-$lc\n";
         $html = get 'http://www.google.com.au/search?hl=' . $lc . '&q=' . $term;
 
@@ -889,6 +901,8 @@ sub do_did_you_mean{
             print STDERR "\t$t\n";
             ++ $dym{$t};
         }
+
+        # English-only sites
 
         if ($lc eq 'en') {
             print STDERR "mw-$lc\n";
@@ -914,6 +928,23 @@ sub do_did_you_mean{
             }
         }
 
+        # Spanish-only sites
+
+        if ($lc eq 'es') {
+            print STDERR "mw-$lc\n";
+            $html = get 'http://www.merriam-webster.com/spanish/' . $term;
+
+            if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
+                if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
+                    for (@a) {
+                        print STDERR "\t$_\n";
+                        $dym{$_} += 0.5;
+                    }
+                }
+            }
+        }
+
+        # Wiktionaries and Wikipedias
         for my $site (('wiktionary', 'wikipedia')) {
             print STDERR "$site-$lc\n";
             $json = get 'http://' . $lc . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
@@ -928,6 +959,7 @@ sub do_did_you_mean{
         }
     }
 
+    # call some toolserver tools based on language name
     for my $ln (keys %names) {
         print STDERR "near-$ln\n";
         $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=' . $ln . '&term=' . $term;
@@ -947,7 +979,6 @@ sub do_did_you_mean{
     }
 
     # now check which of these are blue links on enwikt
-    my $sugg = '';
     if (%dym) {
         print STDERR "bluelink-check\n";
         $json = get 'http://en.wiktionary.org/w/api.php?format=json&action=query&titles=' . join('|', keys %dym);
@@ -962,10 +993,10 @@ sub do_did_you_mean{
                     my $t = $d->{title};
                     print "\t$t\n";
                     if (exists $d->{missing}) {
-                        $col{$t} = '04';     # red
+                        $col{$t} = '04';     # IRC colours: red
                     } else {
                         $dym{$t} += 2;
-                        $col{$t} = '02';     # blue
+                        $col{$t} = '02';     # IRC colours: blue
                     }
                 }
             }
@@ -974,9 +1005,9 @@ sub do_did_you_mean{
         # let's see how they rated
         for my $t (sort {$dym{$b} <=> $dym{$a}} keys %dym) {
             print STDERR "$dym{$t} -> '$t' ($col{$t})\n";
-            if (length $sugg < 48) {
+            if (length $sugg < 64) {
                 $sugg .= ", " if $sugg ne '';
-                $sugg .= "\003$col{$t}$t\00301";
+                $sugg .= "\003$col{$t}$t\00301";    # IRC colours
             }
         }
     }
