@@ -217,6 +217,8 @@ sub bot_start {
     );
 }
 
+#### on_ handlers ####
+
 # The bot has successfully connected to a server.  Join a channel.
 sub on_connect {
     $irc->yield( join => CHANNEL );
@@ -306,187 +308,11 @@ sub on_public {
         if ($defineresp) {
             print " [$ts] <$nick:$channel> $msg\n";
 
-            my $term = shift @dunno_it_all;
-
-            my $resp;
-            
             unless ($known) {
-                my $html;
-                my $json;
-                my $res;
-                my @a;
-                my %dym;
+                my $resp = do_did_you_mean($msg);
 
-                my %script;
-
-                my @ch = split //, $term;
-                for my $ch (@ch) {
-                    my $s = charscript(ord $ch);
-                    ++ $script{$s}
-                }
-
-                my %codes;
-                my %names;
-
-                for my $s (keys %script) {
-                    if ($s eq 'Arabic') {
-                        ++ $codes{$_} for ('ar', 'fa', 'ur');
-                        ++ $names{$_} for ('Arabic', 'Persian', 'Urdu');
-                    } elsif ($s eq 'Armenian') {
-                        ++ $codes{$_} for ('hy');
-                        ++ $names{$_} for ('Armenian');
-                    } elsif ($s eq 'Devanagari') {
-                        ++ $codes{$_} for ('hi', 'sa');
-                        ++ $names{$_} for ('Hindi', 'Sanskrit');
-                    } elsif ($s eq 'Cyrillic') {
-                        ++ $codes{$_} for ('bg', 'ru', 'sr', 'uk');
-                        ++ $names{$_} for ('Bulgarian', 'Russian', 'Serbian', 'Ukrainian');
-                    } elsif ($s eq 'Georgian') {
-                        ++ $codes{$_} for ('ka');
-                        ++ $names{$_} for ('Georgian');
-                    } elsif ($s eq 'Greek') {
-                        ++ $codes{$_} for ('el');
-                        ++ $names{$_} for ('Greek', 'Ancient Gree');
-                    } elsif ($s eq 'Han') {
-                        ++ $codes{$_} for ('zh', 'ja');
-                        ++ $names{$_} for ('Chinese', 'Korean', 'Mandarin', 'Japanese');
-                    } elsif ($s eq 'Hangul') {
-                        ++ $codes{$_} for ('ko');
-                        ++ $names{$_} for ('Korean');
-                    } elsif ($s eq 'Hebrew') {
-                        ++ $codes{$_} for ('he', 'yi');
-                        ++ $names{$_} for ('Hebrew', 'Yiddish');
-                    } elsif ($s eq 'Hiragana') {
-                        ++ $codes{$_} for ('ja');
-                        ++ $names{$_} for ('Japanese');
-                    } elsif ($s eq 'Katakana') {
-                        ++ $codes{$_} for ('ain', 'ja');
-                        ++ $names{$_} for ('Ainu', 'Japanese');
-                    } elsif ($s eq 'Lao') {
-                        ++ $codes{$_} for ('lo');
-                        ++ $names{$_} for ('Lao');
-                    } elsif ($s eq 'Latin') {
-                        ++ $codes{$_} for ('en', 'de', 'fr', 'es');
-                        ++ $names{$_} for ('English', 'German', 'French', 'Spanish');
-                    } elsif ($s eq 'Thai') {
-                        ++ $codes{$_} for ('th');
-                        ++ $names{$_} for ('Thai');
-                    } else {
-                        print STDERR "** unhandled script: $s\n";
-                    }
-                }
-
-                $term = uri_escape_utf8($term);
-
-                for my $lc (keys %codes) {
-                    print STDERR "g-$lc\n";
-                    $html = get 'http://www.google.com.au/search?hl=' . $lc . '&q=' . $term;
-
-                    if ($html =~ /class="?spell"?><b><i>(.*?)<\/i><\/b><\/a>/) {
-                        my $t = decode_entities($1);
-                        print STDERR "\t$t\n";
-                        ++ $dym{$t};
-                    }
-
-                    if ($lc eq 'en') {
-                        print STDERR "mw-$lc\n";
-                        $html = get 'http://www.merriam-webster.com/dictionary/' . $term;
-
-                        if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
-                            if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
-                                for (@a) {
-                                    print STDERR "\t$_\n";
-                                    $dym{$_} += 0.5;
-                                }
-                            }
-                        }
-
-                        print STDERR "enc-$lc\n";
-                        $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
-
-                        if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
-                            for (@a) {
-                                print STDERR "\t$_\n";
-                                ++ $dym{$_};
-                            }
-                        }
-                    }
-
-                    for my $site (('wiktionary', 'wikipedia')) {
-                        print STDERR "$site-$lc\n";
-                        $json = get 'http://' . $lc . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
-
-                        if ($json) {
-                            $res = $js->decode($json);
-                            if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
-                                print STDERR "\t$res->{query}->{searchinfo}->{suggestion}\n";
-                                ++ $dym{$res->{query}->{searchinfo}->{suggestion}};
-                            }
-                        }
-                    }
-                }
-
-                for my $ln (keys %names) {
-                    print STDERR "near-$ln\n";
-                    $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=' . $ln . '&term=' . $term;
-
-                    if ($json) {
-                        $res = $js->decode($json);
-
-                        if (exists $res->{prev}) {
-                            print "\t$res->{prev}->[0]\n";
-                            $dym{$res->{prev}->[0]} += 0.5;
-                        }
-                        if (exists $res->{next}) {
-                            print "\t$res->{next}->[0]\n";
-                            $dym{$res->{next}->[0]} += 0.5;
-                        }
-                    }
-                }
-
-                # now check which of these are blue links on enwikt
-                my $sugg = '';
-                if (%dym) {
-                    print STDERR "bluelink-check\n";
-                    $json = get 'http://en.wiktionary.org/w/api.php?format=json&action=query&titles=' . join('|', keys %dym);
-
-                    my %col;
-
-                    if ($json) {
-                        $res = $js->decode($json);
-
-                        if (exists $res->{query} && exists $res->{query}->{pages}) {
-                            for my $d (values %{$res->{query}->{pages}}) {
-                                my $t = $d->{title};
-                                print "\t$t\n";
-                                if (exists $d->{missing}) {
-                                    $col{$t} = '04';     # red
-                                } else {
-                                    $dym{$t} += 2;
-                                    $col{$t} = '02';     # blue
-                                }
-                            }
-                        }
-                    }
-
-                    # let's see how they rated
-                    for my $t (sort {$dym{$b} <=> $dym{$a}} keys %dym) {
-                        print STDERR "$dym{$t} -> '$t' ($col{$t})\n";
-                        if (length $sugg < 48) {
-                            $sugg .= ", " if $sugg ne '';
-                            $sugg .= "\003$col{$t}$t\00301";
-                        }
-                    }
-                }
-
-                if ($sugg) {
-                    $resp = 'did you mean ' . $sugg . ' ?';
-                } else {
-                    $resp = 'I have little to suggest.';
-                }
+                $resp && $irc->yield( privmsg => CHANNEL, $resp );
             }
-
-            $resp && $irc->yield( privmsg => CHANNEL, $resp );
         }
     }
 }
@@ -608,6 +434,8 @@ sub on_feeds {
     $kernel->delay( feeds => $feed_delay );
     ++ $tick_num;
 }
+
+#### do_ implementations ####
 
 sub do_lang {
     my $input = shift;
@@ -979,6 +807,189 @@ sub do_define {
     return $resp;
 }
 
+sub do_did_you_mean{
+    my $msg = shift;
+    my $resp = undef;
+
+    my $term = shift @dunno_it_all;
+    
+    my $html;
+    my $json;
+    my $res;
+    my @a;
+    my %dym;
+
+    my %script;
+
+    my @ch = split //, $term;
+    for my $ch (@ch) {
+        my $s = charscript(ord $ch);
+        ++ $script{$s}
+    }
+
+    my %codes;
+    my %names;
+
+    for my $s (keys %script) {
+        if ($s eq 'Arabic') {
+            ++ $codes{$_} for ('ar', 'fa', 'ur');
+            ++ $names{$_} for ('Arabic', 'Persian', 'Urdu');
+        } elsif ($s eq 'Armenian') {
+            ++ $codes{$_} for ('hy');
+            ++ $names{$_} for ('Armenian');
+        } elsif ($s eq 'Devanagari') {
+            ++ $codes{$_} for ('hi', 'sa');
+            ++ $names{$_} for ('Hindi', 'Sanskrit');
+        } elsif ($s eq 'Cyrillic') {
+            ++ $codes{$_} for ('bg', 'ru', 'sr', 'uk');
+            ++ $names{$_} for ('Bulgarian', 'Russian', 'Serbian', 'Ukrainian');
+        } elsif ($s eq 'Georgian') {
+            ++ $codes{$_} for ('ka');
+            ++ $names{$_} for ('Georgian');
+        } elsif ($s eq 'Greek') {
+            ++ $codes{$_} for ('el');
+            ++ $names{$_} for ('Greek', 'Ancient Gree');
+        } elsif ($s eq 'Han') {
+            ++ $codes{$_} for ('zh', 'ja');
+            ++ $names{$_} for ('Chinese', 'Korean', 'Mandarin', 'Japanese');
+        } elsif ($s eq 'Hangul') {
+            ++ $codes{$_} for ('ko');
+            ++ $names{$_} for ('Korean');
+        } elsif ($s eq 'Hebrew') {
+            ++ $codes{$_} for ('he', 'yi');
+            ++ $names{$_} for ('Hebrew', 'Yiddish');
+        } elsif ($s eq 'Hiragana') {
+            ++ $codes{$_} for ('ja');
+            ++ $names{$_} for ('Japanese');
+        } elsif ($s eq 'Katakana') {
+            ++ $codes{$_} for ('ain', 'ja');
+            ++ $names{$_} for ('Ainu', 'Japanese');
+        } elsif ($s eq 'Lao') {
+            ++ $codes{$_} for ('lo');
+            ++ $names{$_} for ('Lao');
+        } elsif ($s eq 'Latin') {
+            ++ $codes{$_} for ('en', 'de', 'fr', 'es');
+            ++ $names{$_} for ('English', 'German', 'French', 'Spanish');
+        } elsif ($s eq 'Thai') {
+            ++ $codes{$_} for ('th');
+            ++ $names{$_} for ('Thai');
+        } else {
+            print STDERR "** unhandled script: $s\n";
+        }
+    }
+
+    $term = uri_escape_utf8($term);
+
+    for my $lc (keys %codes) {
+        print STDERR "g-$lc\n";
+        $html = get 'http://www.google.com.au/search?hl=' . $lc . '&q=' . $term;
+
+        if ($html =~ /class="?spell"?><b><i>(.*?)<\/i><\/b><\/a>/) {
+            my $t = decode_entities($1);
+            print STDERR "\t$t\n";
+            ++ $dym{$t};
+        }
+
+        if ($lc eq 'en') {
+            print STDERR "mw-$lc\n";
+            $html = get 'http://www.merriam-webster.com/dictionary/' . $term;
+
+            if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
+                if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
+                    for (@a) {
+                        print STDERR "\t$_\n";
+                        $dym{$_} += 0.5;
+                    }
+                }
+            }
+
+            print STDERR "enc-$lc\n";
+            $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
+
+            if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
+                for (@a) {
+                    print STDERR "\t$_\n";
+                    ++ $dym{$_};
+                }
+            }
+        }
+
+        for my $site (('wiktionary', 'wikipedia')) {
+            print STDERR "$site-$lc\n";
+            $json = get 'http://' . $lc . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
+
+            if ($json) {
+                $res = $js->decode($json);
+                if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
+                    print STDERR "\t$res->{query}->{searchinfo}->{suggestion}\n";
+                    ++ $dym{$res->{query}->{searchinfo}->{suggestion}};
+                }
+            }
+        }
+    }
+
+    for my $ln (keys %names) {
+        print STDERR "near-$ln\n";
+        $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=' . $ln . '&term=' . $term;
+
+        if ($json) {
+            $res = $js->decode($json);
+
+            if (exists $res->{prev}) {
+                print "\t$res->{prev}->[0]\n";
+                $dym{$res->{prev}->[0]} += 0.5;
+            }
+            if (exists $res->{next}) {
+                print "\t$res->{next}->[0]\n";
+                $dym{$res->{next}->[0]} += 0.5;
+            }
+        }
+    }
+
+    # now check which of these are blue links on enwikt
+    my $sugg = '';
+    if (%dym) {
+        print STDERR "bluelink-check\n";
+        $json = get 'http://en.wiktionary.org/w/api.php?format=json&action=query&titles=' . join('|', keys %dym);
+
+        my %col;
+
+        if ($json) {
+            $res = $js->decode($json);
+
+            if (exists $res->{query} && exists $res->{query}->{pages}) {
+                for my $d (values %{$res->{query}->{pages}}) {
+                    my $t = $d->{title};
+                    print "\t$t\n";
+                    if (exists $d->{missing}) {
+                        $col{$t} = '04';     # red
+                    } else {
+                        $dym{$t} += 2;
+                        $col{$t} = '02';     # blue
+                    }
+                }
+            }
+        }
+
+        # let's see how they rated
+        for my $t (sort {$dym{$b} <=> $dym{$a}} keys %dym) {
+            print STDERR "$dym{$t} -> '$t' ($col{$t})\n";
+            if (length $sugg < 48) {
+                $sugg .= ", " if $sugg ne '';
+                $sugg .= "\003$col{$t}$t\00301";
+            }
+        }
+    }
+
+    if ($sugg) {
+        $resp = 'did you mean ' . $sugg . ' ?';
+    } else {
+        $resp = 'I have little to suggest.';
+    }
+
+    return $resp;
+}
+
 sub do_hippietrail {
     my $msg = shift;
     my $resp = undef;
@@ -995,6 +1006,8 @@ sub do_hippietrail {
 
     return $resp;
 }
+
+####
 
 sub hippbotlog {
     if (open(LFH, ">>hippiebot.log")) {
@@ -1019,5 +1032,6 @@ sub normalize_lang_name {
 
 # Run the bot until it is done.
 $poe_kernel->run();
+
 exit 0;
 
