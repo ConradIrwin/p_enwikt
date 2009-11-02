@@ -179,7 +179,8 @@ my @feeds = (
     },
 );
 
-my @dunno_it_all;
+my @kia_queue;
+my @cb_queue;
 
 # Create the component that will represent an IRC network.
 my ($irc) = POE::Component::IRC::State->spawn();
@@ -276,10 +277,18 @@ sub on_public {
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
-    elsif ( my ($term) = $msg =~ /^define (.+)$/ ) {
+    elsif ( my ($kiaterm) = $msg =~ /^define (.+)$/) {
         print " [$ts] <$nick:$channel> $msg\n";
 
-        my $resp = do_define($channel, $term);
+        my $resp = do_define($channel, 'know-it-all', $kiaterm);
+
+        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    }
+
+    elsif ( my ($dbterm) = $msg =~ /^\.\? (.+)$/) {
+        print " [$ts] <$nick:$channel> $msg\n";
+
+        my $resp = do_define($channel, 'club_butler', $dbterm);
 
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
@@ -292,15 +301,17 @@ sub on_public {
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
-    elsif ( $nick eq 'know-it-all' ) {
+    elsif ( $nick eq 'know-it-all' && $channel ne '#wiktionary' ) {
         my ($defineresp, $known);
 
-        if ( $msg =~ '^This page doesnt seem to exist.' ) {
+        if ( $msg =~ '^This page doesnt seem to exist\.' ) {
+            print STDERR "KIA-DYM\t$msg\n";
             $defineresp = 1;
             $known = 0;
 
         # long definitions are cut short so don't check for the final full stop
         } elsif ( $msg =~ /^'.*' is .*: / ) {
+            print STDERR "KIA-DEF\t$msg\n";
             $defineresp = 1;
             $known = 1;
         }
@@ -309,7 +320,33 @@ sub on_public {
             print " [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
-                my $resp = do_did_you_mean($msg);
+                my $resp = do_did_you_mean(\@kia_queue);
+
+                $resp && $irc->yield( privmsg => CHANNEL, $resp );
+            }
+        }
+    }
+
+    elsif ( $nick eq 'club_butler' && $channel ne '#wiktionary' ) {
+        my ($defineresp, $known);
+        my ($term, $pos);
+
+        if ( ($term) = $msg =~ '^Couldn\'t get any definitions for (.*)\.' ) {
+            print STDERR "CB-DYM\t$term\n";
+            $defineresp = 1;
+            $known = 0;
+
+        } elsif ( ($term, $pos) = $msg =~ /^(.*?) — (.*?): \d+\. / ) {
+            print STDERR "CB-DEF\t$term:$pos\n";
+            $defineresp = 1;
+            $known = 1;
+        }
+
+        if ($defineresp) {
+            print " [$ts] <$nick:$channel> $msg\n";
+
+            unless ($known) {
+                my $resp = do_did_you_mean(\@cb_queue);
 
                 $resp && $irc->yield( privmsg => CHANNEL, $resp );
             }
@@ -360,11 +397,11 @@ sub on_msg {
         $resp && $irc->yield( privmsg => $nick, $resp );
     }
 
-    elsif ( my ($term) = $msg =~ /^define (.+)$/ ) {
-        my $resp = do_define(undef, $term);
-
-        $resp && $irc->yield( privmsg => $nick, $resp );
-    }
+    #elsif ( my ($term) = $msg =~ /^define (.+)$/ ) {
+    #    my $resp = do_define(undef, undef, $term);
+    #
+    #    $resp && $irc->yield( privmsg => $nick, $resp );
+    #}
 }
 
 sub on_feeds {
@@ -701,7 +738,7 @@ sub do_toc {
     my $ok = 0;
     my $resp = $page . ': ';
 
-    my $uri = 'http://en.wiktionary.org/w/api.php?action=parse&prop=sections&page=';
+    my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=sections&page=';
 
     my $data;
     my $json = get $uri . $page;
@@ -778,28 +815,45 @@ sub do_gf {
     return $resp;
 }
 
+# TODO handle know-it-all define and club_butler .?
+# TODO if a commmand is used but the bot is missing and the other is here suggest the other bot's command
 sub do_define {
     my $channel = shift;
+    my $bot = shift;
     my $term = shift;
     my $ok = 0;
     my $resp = undef;
 
-    if ($channel) {
-        if (grep $_ eq 'know-it-all', $irc->channel_list($channel)) {
-            push @dunno_it_all, $term;
-        } else {
-            $ok = 1;
-            # define no know it all
-        }
-    } else {
-        $ok = 1;
-    }
+    return undef if $channel eq '#wiktionary';
 
-    if ($ok) {
-        $resp = 'too bad know-it-all isn\'t here';
-        $ok = 0;
-    } else {
-        # define not ok
+    my ($kia, $cb);
+
+    $kia = scalar grep $_ eq 'know-it-all', $irc->channel_list($channel);
+    $cb = scalar grep $_ eq 'club_butler', $irc->channel_list($channel);
+
+    # define doesn't work with /msg
+    if ($channel) {
+        if ($bot eq 'know-it-all') {
+            if ($kia) {
+                push @kia_queue, $term;
+                $ok = 1;
+                print STDERR "KIA-DEFINE '$term' (", scalar @kia_queue, ")\n";
+            } elsif ($cb) {
+                $resp = 'try ".?" instead of "define"';
+            } else {
+                $resp = 'too bad know-it-all isn\'t here';
+            }
+        } elsif ($bot eq 'club_butler') {
+            if ($cb) {
+                push @cb_queue, $term;
+                $ok = 1;
+                print STDERR "CB-DEFINE '$term' (", scalar @cb_queue, ")\n";
+            } elsif ($kia) {
+                $resp = 'try "define" instead of ".?"';
+            } else {
+                $resp = 'too bad club_butler isn\'t here';
+            }
+        }
     }
 
     hippbotlog('define', '', $ok);
@@ -807,12 +861,12 @@ sub do_define {
     return $resp;
 }
 
-sub do_did_you_mean{
-    my $msg = shift;
+sub do_did_you_mean {
+    my $queue = shift;
     my $resp = undef;
 
-    my $term = shift @dunno_it_all;
-    
+    my $term = shift @$queue;
+
     my %dym;        # stores weighted suggestions
     my $sugg = '';  # the compiled and ordered and coloured and trimmed suggestion text
 
@@ -820,6 +874,8 @@ sub do_did_you_mean{
     my @a;          # used for results of scraping web pages
     my $json;       # used for getting and parsing JSON
     my $res;        # used for results of parsing JSON
+
+    print STDERR "SUGGEST\t'$term'\t", scalar @$queue, "\n"; 
 
     ## which scripts are used in this term
 
@@ -1013,6 +1069,7 @@ sub do_did_you_mean{
     }
 
     if ($sugg) {
+        print STDERR "SUGG\t$sugg\n";
         $resp = 'did you mean ' . $sugg . ' ?';
     } else {
         $resp = 'I have little to suggest.';
