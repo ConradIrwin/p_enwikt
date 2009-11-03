@@ -311,7 +311,8 @@ sub on_public {
 
         # long definitions are cut short so don't check for the final full stop
         } elsif ( $msg =~ /^'.*' is .*: / ) {
-            print STDERR "KIA-DEF\t$msg\n";
+            shift @kia_queue;
+            print STDERR "KIA-DEF\t$msg\t(", scalar @kia_queue, ")\n";
             $defineresp = 1;
             $known = 1;
         }
@@ -337,7 +338,8 @@ sub on_public {
             $known = 0;
 
         } elsif ( ($term, $pos) = $msg =~ /^(.*?) — (.*?): \d+\. / ) {
-            print STDERR "CB-DEF\t$term:$pos\n";
+            shift @cb_queue;
+            print STDERR "CB-DEF\t$term:$pos\t(", scalar @cb_queue, ")\n";
             $defineresp = 1;
             $known = 1;
         }
@@ -875,7 +877,7 @@ sub do_did_you_mean {
     my $json;       # used for getting and parsing JSON
     my $res;        # used for results of parsing JSON
 
-    print STDERR "SUGGEST\t'$term'\t", scalar @$queue, "\n"; 
+    print STDERR "SUGGEST\t'$term'\t(", scalar @$queue, ")\n"; 
 
     ## which scripts are used in this term
 
@@ -1049,10 +1051,10 @@ sub do_did_you_mean {
                     my $t = $d->{title};
                     print "\t$t\n";
                     if (exists $d->{missing}) {
-                        $col{$t} = '04';     # IRC colours: red
+                        $col{$t} = '04';     # IRC red 04 ANSI 31
                     } else {
                         $dym{$t} += 2;
-                        $col{$t} = '02';     # IRC colours: blue
+                        $col{$t} = '02';     # IRC blue 02 ANSI 34
                     }
                 }
             }
@@ -1063,14 +1065,18 @@ sub do_did_you_mean {
             print STDERR "$dym{$t} -> '$t' ($col{$t})\n";
             if (length $sugg < 64) {
                 $sugg .= ", " if $sugg ne '';
-                $sugg .= "\003$col{$t}$t\00301";    # IRC colours
+                $sugg .= "\003$col{$t}$t\00301";    # IRC black 01 ANSI 30
             }
         }
     }
 
     if ($sugg) {
-        print STDERR "SUGG\t$sugg\n";
         $resp = 'did you mean ' . $sugg . ' ?';
+        # IRC -> ANSI colour conversion
+        $sugg =~ s/\00301/\e[0m/g; # IRC black / ANSI white
+        $sugg =~ s/\00302/\e[34m/g; # red
+        $sugg =~ s/\00304/\e[31m/g; # blue
+        print STDERR "SUGG\t$sugg\n";
     } else {
         $resp = 'I have little to suggest.';
     }
