@@ -324,7 +324,7 @@ sub dumpresults {
             $fmt && print "\n", '  ' x --$indent;
             print '}';
         # XXX don't use \d here or foreign digits will be unquoted
-        } elsif ($r =~ /^-?[0-9]+$/ && $r != /^0[0-9]+/) {
+        } elsif ($r =~ /^-?[0-9]+$/ && $r !~ /^0[0-9]+$/) {
             #if ($metadata_dtd{$lhs} eq 'bool') {
             #    print $r ? 'true' : 'false';
             #} else {
