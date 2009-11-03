@@ -26,7 +26,9 @@ my $mw = MediaWiki::API->new();
 $mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
 
 # TODO it would be better to choose one from the list. this could change.
-my $default_locale = 'en_US.utf8';
+my $uname = `uname`;
+chomp $uname;
+my $default_locale = $uname eq 'SunOS' ? 'en_US.UTF-8' : 'en_US.utf8';
 
 # which language codes do we have locale support for?
 my %langcodes;
@@ -103,11 +105,16 @@ while (FCGI::accept >= 0) {
         }
 
         # see if we have a locale for this language
+        # TODO currently we pick the first locale for this language
+        # TODO but wolfsbane Solaris has different collation orders for different
+        # TODO locales of the same language. for "en" only "en_US" will order
+        # TODO "treeline", "tree line", and "tree-line" near each other
+        # TODO whereas on nightshade Linux all "en_??" locales sort the same
         my $key = undef;
         while (my ($k, $v) = each %langcodes) {
             if ($v->{enwiktname} eq $langname) {
                 $key = $k;
-                # TODO if we use last with each, each won't start from the beginning next time!
+                # XXX if we use last with each, each won't start from the beginning next time!
                 #last;
             }
         }
@@ -124,6 +131,7 @@ while (FCGI::accept >= 0) {
         if (exists $langcodes{$key}->{words}) {
             $iscached = 1;
             $words = $langcodes{$key}->{words};
+        # TODO for langname */Browse we need to sort and search on disk
         } elsif ($words = slurpsort($langname)) {
             $iscached = 0;
             $langcodes{$key}->{words} = $words;
@@ -178,6 +186,7 @@ exit $cli_retval;
 
 ##########################################
 
+# TODO for langname */Browse we need to sort and search on disk
 sub slurpsort {
     my $retval;
     my $name = shift;
@@ -216,6 +225,7 @@ sub slurpsort {
     return $retval;
 }
 
+# TODO for langname */Browse we need to sort and search on disk
 sub bsearch {
     my ($x, $a) = @_;            # search for x in array a
     my ($l, $u) = (0, @$a - 1);  # lower, upper end of search interval
@@ -275,7 +285,8 @@ sub dumpresults {
     # XXX "my" doesn't work with fcgi!
     # XXX it will be right in dumpresults context but wrong in dumpresults_json!
     our $indent = 0;
-    our $fmt = $format eq 'jsonfm' ? 1 : 0;
+    our $fmt = $format =~ /fm$/ ? 1 : 0;
+    our $qot = $format =~ /^json/ ? 1 : 0;
 
     $callback && print $callback, '(';
     dumpresults_json($r);
@@ -302,7 +313,7 @@ sub dumpresults {
                 $i && print ",";
                 $i++ && $fmt && print "\n";
                 my $k = $h;
-                unless ($h =~ /^[a-z]+$/) {
+                if ($qot || $h !~ /^[a-z]+$/) {
                     $k = '"' . $h . '"';
                 }
                 $fmt && print '  ' x $indent;
@@ -313,7 +324,7 @@ sub dumpresults {
             $fmt && print "\n", '  ' x --$indent;
             print '}';
         # XXX don't use \d here or foreign digits will be unquoted
-        } elsif ($r =~ /^-?[0-9]+$/) {
+        } elsif ($r =~ /^-?[0-9]+$/ && $r != /^0[0-9]+/) {
             #if ($metadata_dtd{$lhs} eq 'bool') {
             #    print $r ? 'true' : 'false';
             #} else {
@@ -325,7 +336,6 @@ sub dumpresults {
             print '"', $r, '"';
         }
     }
-    return 0; # cli success
 }
 
 sub dumperror {
