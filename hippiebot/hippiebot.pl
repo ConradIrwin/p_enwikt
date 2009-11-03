@@ -509,8 +509,32 @@ sub do_lang {
 
     if ($metadata) {
         if (scalar keys %$metadata) {
+
+            # DBpedia metadata
+            my $endpoint = 'http://dbpedia.org/sparql?default-graph-uri=http%3A%2F%2Fdbpedia.org&format=json&query=';
+            my $query = 'PREFIX p: <http://dbpedia.org/property/> PREFIX t: <http://dbpedia.org/resource/Template:> SELECT DISTINCT ?lc,?fn,?fc WHERE{?lp p:wikiPageUsesTemplate t:infobox_language;p:iso ?lc;p:fam ?fp.?fp p:wikiPageUsesTemplate t:infobox_language_family;p:name ?fn.optional{?fp p:iso ?fc}.FILTER (regex(?lc,"^(' . join('|', keys %$metadata) . ')$"))}ORDER BY ?lc';
+            my $uri = $endpoint . uri_escape($query);
+            my @dbp;
+
+            if (my $json = get $uri) {
+                if ($json) {
+                    my $data = $js->decode($json);
+                    if (exists $data->{results} && exists $data->{results}->{bindings}) {
+                        foreach my $b (@{$data->{results}->{bindings}}) {
+                            my $l = {
+                                lc => $b->{lc}->{value},
+                                fc => exists $b->{fc}->{value} ? $b->{fc}->{value} : undef,
+                                fn => $b->{fn}->{value} };
+                            push @dbp, $l;
+                        }
+                    } else {
+                        use Data::Dumper; print 'no DBpedia: ', Dumper $data;
+                    }
+                }
+            }
+
             foreach my $l (%$metadata) {
-                my $eng = metadata_to_english($l, $metadata->{$l});
+                my $eng = metadata_to_english($l, $metadata->{$l}, \@dbp);
                 if ($eng) {
                     $ok = 1;
                     push @resps, $eng;
@@ -535,6 +559,7 @@ sub do_lang {
 sub metadata_to_english {
     my $incode = shift;
     my $l = shift;
+    my $dbp = shift;
     my $resp;
 
     my %names;
@@ -572,13 +597,25 @@ sub metadata_to_english {
         }
         $resp .= ': '. join '; ', keys %names;
 
-        if (exists $l->{fam} || exists $l->{geo}) {
+        if (exists $l->{fam} || exists $l->{geo} || scalar @$dbp) {
             $resp .= ', a';
+
+            my $famcode;
+            my $famname;
+
             if (exists $l->{fam}) {
-                my $famcode = $l->{fam};
-                my $famname = $fam{$famcode};
-                $famname = '"' . $famcode . '"' unless ($famname);
-                if ($famcode eq 'Isolate') {
+                $famcode = $l->{fam};
+                $famname = $fam{$famcode};
+            } elsif (scalar @$dbp) {
+                # TODO look at all entries
+                $famcode = $dbp->[0]->{fc};
+                $famname = $dbp->[0]->{fn};
+            }
+
+            if (defined $famcode || defined $famname) {
+                $famname = '"' . $famcode . '"' unless defined $famname;
+
+                if (defined $famcode && $famcode eq 'Isolate') {
                     $resp .= ' language isolate';
                 } else {
                     $resp .= 'n' if ($famname =~ /^[aeiouAEIUO]/);
