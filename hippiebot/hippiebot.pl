@@ -415,12 +415,14 @@ sub on_feeds {
 
     if ($xml) {
         my $in = 0;
+        my %title_atts;
         my $txt;
         my @titles;
         my $parser = XML::Parser::Lite->new(
             Handlers => {
                 Start => sub {
-                    my (undef, $tag) = @_;
+                    my (undef, $tag) = (shift, shift);
+                    %title_atts = @_ if $tag eq 'title';
                     $txt = '';
                     ++ $in if $tag eq 'entry' || $tag eq 'item';
                 },
@@ -431,7 +433,9 @@ sub on_feeds {
                 End => sub {
                     my (undef, $tag) = @_;
                     if ($in && $tag eq 'title') {
+                        decode_entities($txt) if $title_atts{type} eq 'html';
                         push @titles, $txt;
+                        %title_atts = ();
                     }
                     $in -= $tag eq 'entry' || $tag eq 'item';
                     $txt = '';
