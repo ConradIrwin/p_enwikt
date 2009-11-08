@@ -304,7 +304,7 @@ sub on_public {
     elsif ( $nick eq 'know-it-all' && $channel ne '#wiktionary' ) {
         my ($defineresp, $known);
 
-        if ( $msg =~ '^This page doesnt seem to exist\.' ) {
+        if ( $msg =~ '^This page does( not|nt) seem to exist\.' ) {
             print STDERR "KIA-DYM\t$msg\n";
             $defineresp = 1;
             $known = 0;
@@ -433,7 +433,7 @@ sub on_feeds {
                 End => sub {
                     my (undef, $tag) = @_;
                     if ($in && $tag eq 'title') {
-                        decode_entities($txt) if $title_atts{type} eq 'html';
+                        decode_entities($txt) if exists $title_atts{type} && $title_atts{type} eq 'html';
                         push @titles, $txt;
                         %title_atts = ();
                     }
