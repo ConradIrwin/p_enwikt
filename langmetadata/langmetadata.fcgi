@@ -203,6 +203,7 @@ my $metadata = {
     lt=>{sc=>'Latn',g=>'mf',p=>1,alt=>1,n=>'Lithuanian',fam=>'bat',geo=>'LT'},
     lv=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Latvian',fam=>'bat',geo=>'LV'},
 #   ma=>{sc=>'Deva'},
+    mdf=>{geo=>'RU'},
     mi=>{sc=>'Latn',g=>0,alt=>0,n=>['Maori','Māori'],fam=>'map',geo=>'NZ'},
     mk=>{sc=>'Cyrl',g=>'mfn',p=>1,n=>'Macedonian',fam=>'sla',geo=>'MK'},
     ml=>{sc=>'Mlym',g=>'',n=>'Malayalam',fam=>'dra',geo=>'IN'},
