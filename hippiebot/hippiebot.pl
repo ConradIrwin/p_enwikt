@@ -277,6 +277,14 @@ sub on_public {
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
+    elsif ( my ($suggterm) = $msg =~ /^!suggest (.+)$/ ) {
+        print " [$ts] <$nick:$channel> $msg\n";
+
+        my $resp = do_did_you_mean($suggterm);
+
+        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    }
+
     elsif ( my ($kiaterm) = $msg =~ /^define (.+)$/) {
         print " [$ts] <$nick:$channel> $msg\n";
 
@@ -321,7 +329,8 @@ sub on_public {
             print " [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
-                my $resp = do_did_you_mean(\@kia_queue);
+                print STDERR "SUGGEST\t'$kia_queue[-1]'\t(", scalar @kia_queue, ")\n"; 
+                my $resp = do_did_you_mean(shift @kia_queue);
 
                 $resp && $irc->yield( privmsg => CHANNEL, $resp );
             }
@@ -348,7 +357,8 @@ sub on_public {
             print " [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
-                my $resp = do_did_you_mean(\@cb_queue);
+                print STDERR "SUGGEST\t'$cb_queue[-1]'\t(", scalar @cb_queue, ")\n"; 
+                my $resp = do_did_you_mean(shift @cb_queue);
 
                 $resp && $irc->yield( privmsg => CHANNEL, $resp );
             }
@@ -858,8 +868,8 @@ sub do_gf {
     return $resp;
 }
 
-# TODO handle know-it-all define and club_butler .?
-# TODO if a commmand is used but the bot is missing and the other is here suggest the other bot's command
+# handle know-it-all define and club_butler .?
+# if a commmand is used but the bot is missing and the other is here suggest the other bot's command
 sub do_define {
     my $channel = shift;
     my $bot = shift;
@@ -905,10 +915,8 @@ sub do_define {
 }
 
 sub do_did_you_mean {
-    my $queue = shift;
+    my $term = shift;
     my $resp = undef;
-
-    my $term = shift @$queue;
 
     my %dym;        # stores weighted suggestions
     my $sugg = '';  # the compiled and ordered and coloured and trimmed suggestion text
@@ -917,8 +925,6 @@ sub do_did_you_mean {
     my @a;          # used for results of scraping web pages
     my $json;       # used for getting and parsing JSON
     my $res;        # used for results of parsing JSON
-
-    print STDERR "SUGGEST\t'$term'\t(", scalar @$queue, ")\n"; 
 
     ## which scripts are used in this term
 
@@ -954,7 +960,7 @@ sub do_did_you_mean {
             ++ $names{$_} for ('Georgian');
         } elsif ($s eq 'Greek') {
             ++ $codes{$_} for ('el');
-            ++ $names{$_} for ('Greek', 'Ancient Gree');
+            ++ $names{$_} for ('Greek', 'Ancient Greek');
         } elsif ($s eq 'Han') {
             ++ $codes{$_} for ('zh', 'ja');
             ++ $names{$_} for ('Chinese', 'Korean', 'Mandarin', 'Japanese');
@@ -1016,15 +1022,16 @@ sub do_did_you_mean {
                 }
             }
 
-            print STDERR "enc-$lc\n";
-            $html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
-
-            if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
-                for (@a) {
-                    print STDERR "\t$_\n";
-                    ++ $dym{$_};
-                }
-            }
+            # Encarta no longer gives spelling suggestions but does still have previous/next info
+            #print STDERR "enc-$lc\n";
+            #$html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
+            #
+            #if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
+            #    for (@a) {
+            #        print STDERR "\t$_\n";
+            #        ++ $dym{$_};
+            #    }
+            #}
         }
 
         # Spanish-only sites
