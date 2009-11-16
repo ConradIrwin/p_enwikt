@@ -47,14 +47,14 @@ my %nses = (
     'Citations talk' => 115,
 );
 
-our($opt_b, $opt_h, $opt_t);
+our($opt_b, $opt_h, $opt_n, $opt_t);
 
-getopts('bht');
+getopts('bhn:t');
 
 my ($needle, $df);
 
 if (scalar @ARGV != 2) {
-    die "usage: wiktgrep <needle> <dumpfile>";
+    die "usage: wiktgrep [-n NN] [-bht] <needle> <dumpfile>";
 } else {
     ($needle, $df) = @ARGV;
     $needle = decode('utf8', $needle);
@@ -69,6 +69,7 @@ print STDERR "** dump file: $df\n";
 my ($r, $c);    # raw and cooked line
 my $title = undef;
 my $ns;
+my $head;
 my $lang;
 my $intext;
 my $islast;
@@ -91,8 +92,7 @@ while ($r = <DFH>) {
             my $l = substr($title, 0, $colon);
             $ns = $nses{$l} if exists $nses{$l};
         }
-        $lang = $ns == 0 ? '(prolog)' : undef;
-        #print "<title>$title</title>\n";
+        $lang = $head = $ns == 0 ? '(prolog)' : undef;
         next;
     }
 
@@ -102,7 +102,7 @@ while ($r = <DFH>) {
         $r = substr($r, 33);
     }
     if (rindex($r, '</text>') != -1) {
-        $r = substr($r, 0, -8);
+        $r = substr($r, 0, -8) . "\n";
         $islast = 1;
     }
 
@@ -110,7 +110,7 @@ while ($r = <DFH>) {
         $c = decode_entities($r);
 
         if ($ns == 0 && $c =~ /^(=+)\s*([^=]*?)\s*(=+)\s*$/) {
-            my $head = $2;
+            $head = $2;
             my $level = length $1 <= length $3 ? length $1 : length $3;
 
             if ($opt_h && $head =~ /$needle/) {
@@ -124,7 +124,7 @@ while ($r = <DFH>) {
             }
             if ($level == 2) {
                 $lang = $head;
-                #print "==$head==\n";
+                $head = '(prolog)';
             }
         }
 
@@ -132,9 +132,12 @@ while ($r = <DFH>) {
 
 
         elsif ($opt_b && $c =~ /$needle/) {
-            print $., '||', $title, '||';
-            $ns == 0 && print $lang, '||';
-            print $c;
+            if ($opt_n eq '' || $opt_n == $ns) {
+                print $., '||', $title, '||';
+                $ns == 0 && print $lang, '||';
+                print $head, '||';
+                print $c;
+            }
         }
 
 
