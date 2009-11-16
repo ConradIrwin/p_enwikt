@@ -269,6 +269,7 @@ my $metadata = {
     tiw=>{sc=>'Latn',n=>'Tiwi',fam=>'Isolate',geo=>'AU'},
     tk=>{sc=>'Latn',g=>'',alt=>0,n=>'Turkmen',fam=>'tut',geo=>'TM'},
     tl=>{sc=>['Latn','Tglg'],g=>'',p=>0,n=>'Tagalog',geo=>'PH'},
+    tlh=>{fam=>'art'},
     tmr=>{sc=>'Hebr',n=>'Talmudic Aramaic'},
     tpi=>{sc=>'Latn',n=>'Tok Pisin',fam=>'cpe',geo=>'PG'},
     tr=>{sc=>'Latn',g=>'',p=>1,alt=>1,n=>'Turkish',fam=>'tut',geo=>'TR'},
