@@ -14,6 +14,7 @@ use JSON -support_by_pp;
 use LWP::Simple qw(get $ua);
 use LWP::UserAgent;
 use POE;
+use POE::Component::IRC::Plugin::BotAddressed;
 use POE::Component::IRC::Common qw(irc_to_utf8);
 use POE::Component::IRC::State;
 use Getopt::Std;
@@ -185,15 +186,18 @@ my @cb_queue;
 # Create the component that will represent an IRC network.
 my ($irc) = POE::Component::IRC::State->spawn();
 
+$irc->plugin_add( 'BotAddressed', POE::Component::IRC::Plugin::BotAddressed->new() );
+
 # Create the bot session.  The new() call specifies the events the bot
 # knows about and the functions that will handle those events.
 POE::Session->create(
     inline_states => {
-        _start     => \&bot_start,
-        irc_001    => \&on_connect,
-        irc_public => \&on_public,
-        irc_msg    => \&on_msg,
-        feeds      => \&on_feeds,
+        _start            => \&bot_start,
+        irc_001           => \&on_connect,
+        irc_public        => \&on_public,
+        irc_msg           => \&on_msg,
+        irc_bot_addressed => \&on_bot_addressed,
+        feeds             => \&on_feeds,
     },
 );
 
@@ -236,57 +240,8 @@ sub on_public {
 
     my $ts = scalar localtime;
 
-    if ( my ($incode) = $msg =~ /^lang (.+)/ ) {
-        print " [$ts] <$nick:$channel> $msg\n";
-
-        my $resps = do_lang($incode);
-        foreach (@$resps) {
-            $irc->yield( privmsg => CHANNEL, $_ );
-        }
-    }
-
-    elsif ( $msg =~ /^dumps$/ ) {
-        print " [$ts] <$nick:$channel> $msg\n";
-
-        my $resp = do_dumps();
-
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
-    }
-
-    elsif ( my ($lang) = $msg =~ /^random (.+)$/ ) {
-        print " [$ts] <$nick:$channel> $msg\n";
-
-        my $resp = do_random($lang);
-
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
-    }
-
-    elsif ( my ($page) = $msg =~ /^toc (.+)$/ ) {
-        print " [$ts] <$nick:$channel> $msg\n";
-
-        my $resp = do_toc($page);
-
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
-    }
-
-    elsif ( my ($force, $args) = $msg =~ /^gf(!)? (.+)$/ ) {
-        print " [$ts] <$nick:$channel> $msg\n";
-
-        my $resp = do_gf($channel, $force, $args);
-
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
-    }
-
-    elsif ( my ($suggterm) = $msg =~ /^!suggest (.+)$/ ) {
-        print " [$ts] <$nick:$channel> $msg\n";
-
-        my $resp = do_did_you_mean($suggterm);
-
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
-    }
-
-    elsif ( my ($kiaterm) = $msg =~ /^define (.+)$/) {
-        print " [$ts] <$nick:$channel> $msg\n";
+    if ( my ($kiaterm) = $msg =~ /^define (.+)$/) {
+        print "1 [$ts] <$nick:$channel> $msg\n";
 
         my $resp = do_define($channel, 'know-it-all', $kiaterm);
 
@@ -294,20 +249,20 @@ sub on_public {
     }
 
     elsif ( my ($dbterm) = $msg =~ /^\.\? (.+)$/) {
-        print " [$ts] <$nick:$channel> $msg\n";
+        print "2 [$ts] <$nick:$channel> $msg\n";
 
         my $resp = do_define($channel, 'club_butler', $dbterm);
 
         $resp && $irc->yield( privmsg => CHANNEL, $resp );
     }
 
-    elsif ( $nick eq 'hippietrail' && $nickserv ) {
-        print " [$ts] <$nick:$channel> $msg\n";
+    #elsif ( $nick eq 'hippietrail' && $nickserv ) {
+    #    print "3 [$ts] <$nick:$channel> $msg\n";
 
-        my $resp = do_hippietrail($msg);
+    #    my $resp = do_hippietrail($msg);
 
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
-    }
+    #    $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    #}
 
     elsif ( $nick eq 'know-it-all' && $channel ne '#wiktionary' ) {
         my ($defineresp, $known);
@@ -326,11 +281,11 @@ sub on_public {
         }
 
         if ($defineresp) {
-            print " [$ts] <$nick:$channel> $msg\n";
+            print "4 [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
                 print STDERR "SUGGEST\t'$kia_queue[-1]'\t(", scalar @kia_queue, ")\n"; 
-                my $resp = do_did_you_mean(shift @kia_queue);
+                my $resp = do_suggest(shift @kia_queue);
 
                 $resp && $irc->yield( privmsg => CHANNEL, $resp );
             }
@@ -354,14 +309,23 @@ sub on_public {
         }
 
         if ($defineresp) {
-            print " [$ts] <$nick:$channel> $msg\n";
+            print "5 [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
                 print STDERR "SUGGEST\t'$cb_queue[-1]'\t(", scalar @cb_queue, ")\n"; 
-                my $resp = do_did_you_mean(shift @cb_queue);
+                my $resp = do_suggest(shift @cb_queue);
 
                 $resp && $irc->yield( privmsg => CHANNEL, $resp );
             }
+        }
+    }
+
+    else {
+        print "PUBLIC [$ts] <$nick:$channel> $msg\n";
+        my $resps = do_command($msg);
+
+        foreach (@$resps) {
+            $irc->yield( privmsg => CHANNEL, $_ );
         }
     }
 }
@@ -372,48 +336,38 @@ sub on_msg {
     my ( $kernel, $who, $where, $msg ) = @_[ KERNEL, ARG0, ARG1, ARG2 ];
     my $nick = ( split /!/, $who )[0];
     my $channel = $where->[0];
+    my $resps;
 
     $msg = irc_to_utf8($msg);
 
     my $ts = scalar localtime;
-    print " [$ts] <$nick:$channel> $msg\n";
+    print "MSG [$ts] <$nick:$channel> $msg\n";
 
-    if ( my ($incode) = $msg =~ /^lang (.+)/ ) {
-        my $resps = do_lang($incode);
-        foreach (@$resps) {
-            $irc->yield( privmsg => $nick, $_ );
-        }
+    $resps = do_command($msg);
+
+    foreach (@$resps) {
+        $irc->yield( privmsg => $nick, $_ );
     }
+}
 
-    elsif ( $msg =~ /^dumps$/ ) {
-        my $resp = do_dumps();
+# The bot has been addressed in a channel.  Parse it for commands, and
+# respond to interesting things.
+sub on_bot_addressed {
+    my ( $kernel, $who, $where, $msg ) = @_[ KERNEL, ARG0, ARG1, ARG2 ];
+    my $nick = ( split /!/, $who )[0];
+    my $channel = $where->[0];
+    my $resps;
 
-        $resp && $irc->yield( privmsg => $nick, $resp );
+    $msg = irc_to_utf8($msg);
+
+    my $ts = scalar localtime;
+    print "ADDRESS [$ts] <$nick:$channel> $msg\n";
+
+    $resps = do_command($msg);
+
+    foreach (@$resps) {
+        $irc->yield( privmsg => CHANNEL, $nick . ': ' . $_ );
     }
-
-    elsif ( my ($lang) = $msg =~ /^random (.+)$/ ) {
-        my $resp = do_random($incode);
-
-        $resp && $irc->yield( privmsg => $nick, $resp );
-    }
-
-    elsif ( my ($page) = $msg =~ /^toc (.+)$/ ) {
-        my $resp = do_toc($page);
-
-        $resp && $irc->yield( privmsg => $nick, $resp );
-    }
-
-    elsif ( my ($args) = $msg =~ /^gf (.+)$/ ) {
-        my $resp = do_gf(undef, undef, $args);
-
-        $resp && $irc->yield( privmsg => $nick, $resp );
-    }
-
-    #elsif ( my ($term) = $msg =~ /^define (.+)$/ ) {
-    #    my $resp = do_define(undef, undef, $term);
-    #
-    #    $resp && $irc->yield( privmsg => $nick, $resp );
-    #}
 }
 
 sub on_feeds {
@@ -489,6 +443,33 @@ sub on_feeds {
 }
 
 #### do_ implementations ####
+
+sub do_command {
+    my $msg = shift;
+    my $force;
+    my $args;
+    my $resps;
+
+    $msg = irc_to_utf8($msg);
+
+    if ( ($args) = $msg =~ /^lang (.+)/ ) {
+        $resps = do_lang($args);
+    }
+
+    elsif ( $msg =~ /^dumps$/ ) {
+        $resps->[0] = do_dumps();
+    } elsif ( ($args) = $msg =~ /^random\s+(.+)\s*$/ ) {
+        $resps->[0] = do_random($args);
+    } elsif ( ($args) = $msg =~ /^toc\s+(.+)\s*$/ ) {
+        $resps->[0] = do_toc($args);
+    } elsif ( ($force, $args) = $msg =~ /^gf(!)\s+(.+)\s*$/ ) {
+        $resps->[0] = do_gf(undef, $force, $args);
+    } elsif ( ($args) = $msg =~ /^!suggest\s+(.+)\s*$/ ) {
+        $resps->[0] = do_suggest($args);
+    }
+
+    return $resps;
+}
 
 sub do_lang {
     my $input = shift;
@@ -842,7 +823,7 @@ sub do_gf {
     if ($ok) {
         my %searches;
 
-        $searches{$_}=undef for ($args =~ /(".*?"|\S+)/g);
+        $searches{$_} = undef for ($args =~ /(".*?"|\S+)/g);
 
         foreach my $term (keys %searches) {
             $term =~ s/  +/+/g;
@@ -914,7 +895,7 @@ sub do_define {
     return $resp;
 }
 
-sub do_did_you_mean {
+sub do_suggest {
     my $term = shift;
     my $resp = undef;
 
