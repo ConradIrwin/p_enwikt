@@ -450,8 +450,6 @@ sub do_command {
     my $args;
     my $resps;
 
-    $msg = irc_to_utf8($msg);
-
     if ( ($args) = $msg =~ /^lang (.+)/ ) {
         $resps = do_lang($args);
     }
