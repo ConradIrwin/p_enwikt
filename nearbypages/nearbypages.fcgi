@@ -333,6 +333,8 @@ sub dumpresults {
         } else {
             $r =~ s/\\/\\\\/g;
             $r =~ s/"/\\"/g;
+            # escape control characters
+            $r =~ s/([\x00-\x1f])/sprintf '\u%04x', ord $1/eg;
             print '"', $r, '"';
         }
     }
