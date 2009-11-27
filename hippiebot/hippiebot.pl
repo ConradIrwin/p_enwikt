@@ -955,6 +955,9 @@ sub do_suggest {
         } elsif ($s eq 'Katakana') {
             ++ $codes{$_} for ('ain', 'ja');
             ++ $names{$_} for ('Ainu', 'Japanese');
+        } elsif ($s eq 'Khmer') {
+            ++ $codes{$_} for ('km');
+            ++ $names{$_} for ('Khmer');
         } elsif ($s eq 'Lao') {
             ++ $codes{$_} for ('lo');
             ++ $names{$_} for ('Lao');
