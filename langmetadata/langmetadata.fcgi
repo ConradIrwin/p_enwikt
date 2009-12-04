@@ -144,6 +144,8 @@ my $metadata = {
     fj=>{sc=>'Latn',n=>'Fijian',fam=>'map',geo=>'FJ'},
     fo=>{sc=>'Latn',g=>'mfn',n=>['Faroese','Faeroese'],fam=>'gem',geo=>'FO'},
     fr=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'French',fam=>'roa',geo=>['FR','CH','BE']},
+    frm=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Middle French',fam=>'roa',anc=>1},
+    fro=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Old French',fam=>'roa',anc=>1},
     fy=>{sc=>'Latn',n=>'West Frisian',fam=>'gem',geo=>'NL'},
     ga=>{sc=>'Latn',g=>'mf',p=>1,n=>'Irish',fam=>'cel',geo=>'IE'},
     gd=>{sc=>'Latn',g=>'mf',p=>1,n=>'Scottish Gaelic',fam=>'cel',geo=>'GB'},
