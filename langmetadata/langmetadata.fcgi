@@ -578,7 +578,11 @@ sub dumpresults {
         # XXX don't use \d here or foreign digits will be unquoted
         } elsif ($r =~ /^-?[0-9]+$/ && $r !~ /^0[0-9]+$/) {
             if ($metadata_dtd{$lhs} eq 'bool') {
-                print $r ? 'true' : 'false';
+                if ($qot) {
+                    print $r ? 'true' : 'false';
+                } else {
+                    print $r ? '1' : '0'; # shaves 1kb off output
+                }
             } else {
                 print $r;
             }
