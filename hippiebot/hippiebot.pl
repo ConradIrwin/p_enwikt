@@ -296,7 +296,12 @@ sub on_public {
         my ($defineresp, $known);
         my ($term, $pos);
 
-        if ( ($term) = $msg =~ '^Couldn\'t get any definitions for (.*)\.' ) {
+        if ( ($term) = $msg =~ '^Couldn\'t get any definitions for (.*)\.$' ) {
+            print STDERR "CB-DYM\t$term\n";
+            $defineresp = 1;
+            $known = 0;
+
+        } elsif ( ($term) = $msg =~ '^Couldn\'t get any definitions from http:\/\/en\.wiktionary\.org\/wiki\/(.*)\.$' ) {
             print STDERR "CB-DYM\t$term\n";
             $defineresp = 1;
             $known = 0;
@@ -964,6 +969,9 @@ sub do_suggest {
         } elsif ($s eq 'Latin') {
             ++ $codes{$_} for ('en', 'de', 'fr', 'es');
             ++ $names{$_} for ('English', 'German', 'French', 'Spanish');
+        } elsif ($s eq 'Malayalam') {
+            ++ $codes{$_} for ('ml');
+            ++ $names{$_} for ('Malayalam');
         } elsif ($s eq 'Thai') {
             ++ $codes{$_} for ('th');
             ++ $names{$_} for ('Thai');
