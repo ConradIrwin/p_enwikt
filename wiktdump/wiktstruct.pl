@@ -6,13 +6,10 @@
 
 use strict;
 use Encode;
-use Getopt::Std;
 use HTML::Entities;
+use Unicode::Collate;
 use Unicode::Normalize;
-
-# $opt_n    Unicode normalization of titles
-
-use vars qw($opt_n);
+use Unicode::UCD 'charscript';
 
 my %nses = (
     'Talk' => 1,
@@ -56,8 +53,6 @@ my %head2id;
 my @id2head;
 my $head_id_auto_inc = 0;
 
-getopts('bn');
-
 my $if = shift;
 my $df = shift;
 
@@ -65,12 +60,11 @@ open(DFH, $df) or die "no dump file";
 open(IFH, $if) or die "no index file";
 
 binmode(IFH);
-if ($opt_n) {
-    binmode(STDOUT, 'utf8');
-} else {
-    #this would set unix eol whereas the other tools seem to expect dos eol
-    #binmode(STDOUT);
-}
+
+binmode(STDOUT, 'utf8');
+binmode(STDERR, 'utf8');
+
+my $uca = Unicode::Collate->new;
 
 my ($s, $e);
 
@@ -97,20 +91,17 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
     seek(DFH, $o, 0);# == 0 && die "seek doesnt work";
     $l = <DFH>;
 
-    $l = decode('utf8', $l) if ($opt_n);
+    $l = decode('utf8', $l);
 
     $l = decode_entities($l);
 
     # -9 is for \n so probably needs to be -10 for \r\n
     $t = substr($l,11,-9);
 
-    $t = NFD($t) if ($opt_n);
-
     # MySQL LOAD DATA INFILE requires backslashes to be escaped
     $t =~ s/\\/\\\\/g;
 
     $page->{title} = $t;
-    #print "{t '$t')\n";
 
     my $ns = 0;
     my $colon = index($t, ':');
@@ -134,6 +125,24 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
     $page->{id} = <DFH>;
     # -6 is for \n so probably needs to be -7 for \r\n
     $page->{id} = substr($page->{id},8,-6);
+
+    # UCA sort key
+    $page->{sortkey} = $uca->getSortKey($page->{title});
+    # escape certain byte values since sortkeys are binary and can contain control characters
+    $page->{sortkey} =~ s/\\/\\\\/g;
+    $page->{sortkey} =~ s/\t/\\t/g;
+    $page->{sortkey} =~ s/\n/\\n/g;
+
+    emit_title($page->{id}, $page->{title}, $page->{sortkey});
+
+    # scripts in page title
+    my %script;
+
+    for my $ch (split //, $page->{title}) {
+        ++ $script{ charscript(ord $ch) };
+    }
+
+    emit_scripts($page->{id}, [ keys %script]);
 
     # we have the title so now we need to check the namespace and look for language headings
     while (<DFH>) {
@@ -161,9 +170,12 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
             $firstwikitextline = $l;
             chomp $firstwikitextline;
 
+            # TODO use the new redirect element in the dump XML format
             # TODO so far we only handle redirects in the article namespace
             if ($firstwikitextline =~ /^#\s*redirect\s*\[\[(.*?)\]\]/i) {
                 id_for_lang('_Redirect');
+
+                # TODO emit_redirect
 
                 last;
             }
@@ -188,7 +200,7 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
 
                 unless (exists $page->{entries}) {
                     print STDERR "** section heading before any language heading. level $level: $t: $pagehead\n";
-                    push @{$page->{entries}}, { 'lang' => "\\N\t\\N" };
+                    push @{$page->{entries}}, { 'lang' => "\\N" };
                 }
 
                 push @{$page->{entries}->[-1]->{sects}}, $level . "\t" . $head2id{$pagehead};
@@ -254,22 +266,33 @@ sub emit_lang {
 sub emit_head {
     my $head = shift;
 
-    if (open(LFH, ">>__headings.txt")) {
-        print LFH "$head\n";
-        close(LFH);
+    if (open(HFH, ">>__headings.txt")) {
+        print HFH "$head\n";
+        close(HFH);
     } else {
         print STDERR "can't open __headings.txt\n";
+    }
+}
+
+sub emit_title {
+    my ($id, $title, $key) = @_;
+
+    if (open(TFH, '>>:encoding(utf8)', "__titles.txt")) {
+        print TFH "$id\t$title\t$key\n";
+        close(TFH);
+    } else {
+        print STDERR "can't open __titles.txt\n";
     }
 }
 
 sub emit_page {
     my $p = shift;
 
-    if (open(PFH, ">>__pages.txt")) {
+    if (open(PFH, '>>:encoding(utf8)', "__pages.txt")) {
         foreach my $e (@{$p->{entries}}) {
-            print PFH "$p->{id}\t$p->{title}\t$e->{lang}\t\\N\t\\N\t\\N\n";
+            print PFH "$p->{id}\t$e->{lang}\t\\N\t\\N\n";
             foreach my $s (@{$e->{sects}}) {
-                print PFH "$p->{id}\t$p->{title}\t$e->{lang}\t$s\n";
+                print PFH "$p->{id}\t$e->{lang}\t$s\n";
             }
         }
         close(PFH);
@@ -278,3 +301,13 @@ sub emit_page {
     }
 }
 
+sub emit_scripts {
+    my ($id, $scripts) = @_;
+
+    if (open(SFH, '>>:encoding(utf8)', "__scripts.txt")) {
+        print SFH "$id\t$_\n" for (@$scripts);
+        close(SFH);
+    } else {
+        print STDERR "can't open __scripts.txt\n";
+    }
+}
