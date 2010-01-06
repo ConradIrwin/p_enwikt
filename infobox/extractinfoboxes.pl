@@ -59,8 +59,6 @@ if ($jdata) {
 
         my @pageids = map $_->{pageid}, @$ei;
 
-        #print "<infoboxen>\n";
-
         for (my $i = 0; $i < scalar @pageids; $i += 2) {
             my $uri = 'http://en.wikipedia.org/w/api.php' . 
                         '?format=json' .
@@ -72,12 +70,6 @@ if ($jdata) {
                         '&rvprop=content' .
                         '&rvgeneratexml'
                         ;
-
-            #if ($pageids[$i] == 22666 || $pageids[$i+1] == 22666) {
-            #    $uri .= '&revids=331707917';
-            #} else {
-            #    $uri .= '&pageids=' . join('|', @pageids[$i..$i+1]);
-            #}
 
             my $jdata = get $uri;
 
@@ -96,13 +88,11 @@ if ($jdata) {
                         $deep = 0;
                         page($i + $j, $v->{title}, $root_element->content_twine);
 
-                        #print "\n\n";
                         ++ $j;
                     }
                 }
             }
         }
-        #print "</infoboxen>\n";
     }
 }
 
@@ -111,13 +101,11 @@ exit;
 sub flatten_wikilinks {
     my $t = shift;
 
-    # [[Image:Phoenician mem.svg|12px|𐤌‏]]
-    # image links
+    # get alt text from image & file links
     $t =~ s/\[\[(?:Image|File):[^\|]*?\|[^\|]*?(?:\|([^\]]*?))?\]\]/$1/g;
 
     # normal links
     $t =~ s/\[\[(?:[^\]]*?\|)?([^\]]*?)\]\](\w*)?/$1$2/g;
-    #$t =~ s/\[\[(?:(?:[a-z]+:)?[^\]]*?\|)?([^\]]*?)\]\](\w*)?/$1$2/g;
 
     return $t;
 }
@@ -129,35 +117,19 @@ sub page {
     my $pagetitle = shift;
     my $t = shift;
 
-    #print "<page title=\"$pagetitle\">\n";
     print '(', $num, ")\n$pagetitle\n";
 
     while (my ($s, $x) = splice(@$t, 0, 2)) {
-        my $s2 = $s;
-        $s2 =~ s/^\s*(.*?)\s*$/$1/s;
-        $s2 =~ s/\s+/ /gs;
-
         if ($x) {
             if ($x->type_name eq 'template') {
                 page_template($x->content_twine);
-            } elsif ($x->type_name eq 'comment') {
-                #print '<comment>', substr($x->content_twine->[0], 4, -7), '</comment>';
-            } elsif ($x->type_name eq 'ext') {
-                # always has name attr inner close each with one text value which may be empty
-                #print '<ext name="', $x->content_twine->[1]->content_twine->[0], '"/>';
-                #my $extname = $x->content_twine->[1]->content_twine->[0];
-                #my $extcont = $x->content_twine->[3]->content_twine->[0];
-                #print "<ext-$extname>$extcont</ext-$extname>";
-            } elsif ($x->type_name eq 'ignore') {
-                #print '<ignore>', $x->content_twine->[0], '</ignore>';
-            } else {
-                print '##WEIRD<', $x->type_name, '>##';
-                $tdep = -1;
-                unexpected_xml($x->content_twine);
+            #} else {
+            #    print '##WEIRD<', $x->type_name, '>##';
+            #    $tdep = -1;
+            #    unexpected_xml($x->content_twine);
             }
         }
     }
-    #print "</page>\n";
 }
 
 # handle XML template elements directly inside a page
@@ -178,14 +150,12 @@ sub infobox {
     my $kind = shift;
     my %parts;
 
-    #print "<infobox>\n";
     say "\tInfobox $kind";
 
     for (my $i = 3; $i < scalar @$ib; $i += 2) {
         my $p = $ib->[$i];
         my $j = ($i - 3) / 2;
 
-        # TODO some parts have an index in the attrs instead of a name
         my $name = $p->content_twine->[1]->content_twine->[0];
         my $num = 0;
 
@@ -204,27 +174,21 @@ sub infobox {
                 }
             }
 
-            my $attr = '';
-            $attr .= " n=\"$num\"" if ($num);
-            #$attr .= " i=\"$j\"";
-
-            my $open = "<$name$attr>";
             my $value;
-            my $close = "</$name>";
 
             # value calls other templates?
             if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
                 $value = xml_inside_infobox($p->content_twine->[3]->content_twine);
             } else {
                 $value = $p->content_twine->[3]->content_twine->[0];
-                $value =~ s/^\s*(.*?)\s*$/$1/s if $value;
-
-                $value = flatten_wikilinks($value);
             }
 
+            $value =~ s/^\s*(.*?)\s*$/$1/s if $value;
+            $value =~ s/\s+/ /gs;
+
+            $value = flatten_wikilinks($value);
+
             if ($value ne '') {
-                #print "$open$value$close\n";
-                #print "\t\t$name\t$value\n";
                 $parts{$name}->{$num} = $value;
             }
         }
@@ -235,8 +199,6 @@ sub infobox {
             say "\t\t$p", $n ? $n : '', "\t$parts{$p}->{$n}";
         }
     }
-
-    #print "</infobox>\n";
 }
 
 sub xml_inside_infobox {
@@ -245,8 +207,8 @@ sub xml_inside_infobox {
 
     while (my ($s, $x) = splice(@$t, 0, 2)) {
         my $s2 = $s;
-        $s2 =~ s/^\s*(.*?)\s*$/$1/s;
-        $s2 =~ s/\s+/ /gs;
+        #$s2 =~ s/^\s*(.*?)\s*$/$1/s;
+        #$s2 =~ s/\s+/ /gs;
 
         $s2 = flatten_wikilinks($s2);
 
@@ -255,22 +217,16 @@ sub xml_inside_infobox {
         if ($x) {
             if ($x->type_name eq 'template') {
                 $r .= template_inside_infobox($x->content_twine);
-            } elsif ($x->type_name eq 'comment') {
-                #print '<comment>', $x->content_twine->[0], '</comment>';
             } elsif ($x->type_name eq 'ext') {
-                # always has name attr inner close each with one text value which may be empty
-                #print '<ext name="', $x->content_twine->[1]->content_twine->[0], '"/>';
                 my $extname = $x->content_twine->[1]->content_twine->[0];
+
                 if ($extname eq 'nowiki') {
-                    my $extcont = $x->content_twine->[5]->content_twine->[0];
-                    $r .= $extcont;
-                } else {
-                    #print "<ext-$extname/>";
+                    $r .= $x->content_twine->[5]->content_twine->[0];
                 }
-            } else {
-                $r .= '##WEIRD<' . $x->type_name . '>##';
-                $tdep = -1;
-                unexpected_xml($x->content_twine);
+            #} else {
+            #    $r .= '##WEIRD<' . $x->type_name . '>##';
+            #    $tdep = -1;
+            #    unexpected_xml($x->content_twine);
             }
         }
     }
@@ -284,6 +240,7 @@ sub template_inside_infobox {
 
     my $title = $tmp->[1]->content_twine->[0];
     $title =~ s/^\s*(.*?)\s*$/$1/s;
+
     my $htitle = $title;
     $htitle =~ s/\s+/-/g;
 
@@ -340,42 +297,31 @@ sub template_inside_infobox {
     }
 
     else {
-        #$r = "<template-$htitle>";
-
         for (my $i = 3; $i < scalar @$tmp; $i += 2) {
             my $p = $tmp->[$i];
             my $j = ($i - 3) / 2;
 
             # TODO some parts have an index in the attrs instead of a name
             my $n = $p->content_twine->[1]->content_twine->[0];
+
             $n =~ s/^\s*(.*?)\s*$/$1/s;
 
             $n = 'part' if $n eq '';
 
-            my $attr = '';
-            #$attr .= " i=\"$j\"";
-            $attr .= ' apn="' . $apn++ . '"';
-
-            my $open = "<$n$attr>";
-
-            my $close = "</$n>";
+            my $attr = ' apn="' . $apn++ . '"';
 
             if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
-                # value calls other templates
-                #$r .= $open;
                 $r .= xml_inside_infobox($p->content_twine->[3]->content_twine);
-                #$r .= $close;
             } else {
                 my $v = $p->content_twine->[3]->content_twine->[0];
-                $v =~ s/^\s*(.*?)\s*$/$1/s;
+
+                #$v =~ s/^\s*(.*?)\s*$/$1/s;
 
                 if ($v ne '') {
-                    #$r .= $open . $v . $close;
                     $r .= $v;
                 }
             }
         }
-        #$r .= "</template-$htitle>";
     }
     return $r;
 }
@@ -388,21 +334,15 @@ sub txt_field_from_template {
 
     my $p = $tmp->[$i * 2 + 3];
 
-    # XXX fails for "Egyptian language"
-    # XXX Can't call method "content_twine" on an undefined value
-    #print STDERR "txt_field_from_template <$name> $i of ", ((scalar @$tmp) - 3) / 2, "\n";
     if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
-        # value calls other templates
-        #print "<$name-deep>";
         $r .= xml_inside_infobox($p->content_twine->[3]->content_twine);
-        #print "</$name-deep>";
     } else {
         my $v = $p->content_twine->[3]->content_twine->[0];
-        $v =~ s/^\s*(.*?)\s*$/$1/s;
 
-        $v = flatten_wikilinks($v);
+        #$v =~ s/^\s*(.*?)\s*$/$1/s;
 
-        #print $v;
+        #$v = flatten_wikilinks($v);
+
         $r .= $v;
     }
     return $r;
@@ -415,13 +355,11 @@ sub template_sm {
     my $p = $tmp->[0 * 2 + 3];
 
     if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
-        # value calls other templates
-        $r = "<sm-deep>";
-        $r .= xml_inside_infobox($p->content_twine->[3]->content_twine);
-        $r .= "</sm-deep>";
+        $r = '<sm-deep>' . xml_inside_infobox($p->content_twine->[3]->content_twine) . '</sm-deep>';
     } else {
         my $v = $p->content_twine->[3]->content_twine->[0];
-        $v =~ s/^\s*(.*?)\s*$/$1/s;
+
+        #$v =~ s/^\s*(.*?)\s*$/$1/s;
 
         $r = uc $v;
     }
