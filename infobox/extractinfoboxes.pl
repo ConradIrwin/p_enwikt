@@ -17,6 +17,7 @@ binmode STDOUT, 'utf8';
 
 use constant BATCHSIZE => 8;
 
+my $rv = 1; # 0 for success and 1 for error;
 my $deep;
 my $tdep;
 
@@ -95,19 +96,31 @@ if ($jdata) {
 
                         ++ $j;
                     }
+                    $rv = 0;
+                } else {
+                    print STDERR "JSON query->data doesn't exist\n";
+                    $rv = 1;
+                    last;
                 }
+            } else {
+                print STDERR "didn't get JSON data\n";
+                $rv = 1;
+                last;
             }
         }
     }
 }
 
-exit;
+print STDERR "xmleasy returning $rv\n";
+
+exit $rv;
 
 sub flatten_wikilinks {
     my $t = shift;
 
     # get alt text from image & file links
-    $t =~ s/\[\[(?:Image|File):[^\|]*?\|[^\|]*?(?:\|([^\]]*?))?\]\]/$1/g;
+    #         [[  (Image|File): ...    | ...     ( | ...     )? ]]
+    $t =~ s/\[\[(?:Image|File):[^\|]*?\|[^\|]*?(?:\|([^\]]*?))?\]\]/defined $1 ? $1 : ''/eg;
 
     # normal links
     $t =~ s/\[\[(?:[^\]]*?\|)?([^\]]*?)\]\](\w*)?/$1$2/g;
@@ -155,7 +168,6 @@ sub infobox {
 
     for (my $i = 3; $i < scalar @$ib; $i += 2) {
         my $p = $ib->[$i];
-        my $j = ($i - 3) / 2;
 
         my $name = $p->content_twine->[1]->content_twine->[0];
         my $num = 0;
@@ -169,10 +181,7 @@ sub infobox {
         if ($name =~ /$filter/) {
             # handle numbered fields
             if ($name =~ /^(.*?)(\d+)$/) {
-                unless ($1 eq 'iso') {
-                    $name = $1;
-                    $num = $2;
-                }
+                ($name, $num) = ($1, $2) unless $1 eq 'iso';
             }
 
             my $value;
@@ -207,15 +216,15 @@ sub xml_inside_infobox {
     my $r = '';
 
     while (my ($s, $x) = splice(@$t, 0, 2)) {
-        my $s2 = $s;
 
-        $s2 = flatten_wikilinks($s2);
+        $s = flatten_wikilinks($s);
 
-        $r .= $s2;
+        $r .= $s;
 
         if ($x) {
             if ($x->type_name eq 'template') {
                 $r .= template_inside_infobox($x->content_twine);
+
             } elsif ($x->type_name eq 'ext') {
                 my $extname = $x->content_twine->[1]->content_twine->[0];
 
@@ -249,12 +258,11 @@ sub template_inside_infobox {
     } elsif ($htitle eq 'okina') {
         $r = 'ʻ';
 
-    } elsif ($htitle eq 'Audio') {
-        $r = txt_field_from_template($tmp, $htitle, 1);
+    } elsif ($htitle eq 'sm') {
+        $r = template_sm($tmp);
+
     } elsif ($htitle eq 'Coptic') {
         $r = txt_field_from_template($tmp, $htitle, 0);
-    } elsif ($htitle eq 'cuneiform') {
-        $r = txt_field_from_template($tmp, $htitle, 1);
     } elsif ($htitle eq 'Hebrew') {
         $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle =~ /^IAST2?$/) {
@@ -265,8 +273,6 @@ sub template_inside_infobox {
         $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'IPA-en') {
         $r = txt_field_from_template($tmp, $htitle, 0);
-    } elsif ($htitle =~ /^[lL]ang$/) {
-        $r = txt_field_from_template($tmp, $htitle, 1);
     } elsif ($htitle eq 'lang-Assamese2') {
         $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'lang-la') {
@@ -277,26 +283,31 @@ sub template_inside_infobox {
         $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'Polytonic') {
         $r = txt_field_from_template($tmp, $htitle, 0);
-    } elsif ($htitle eq 'rtl-lang') {
-        $r = txt_field_from_template($tmp, $htitle, 1);
-    } elsif ($htitle eq 'script') {
-        $r = txt_field_from_template($tmp, $htitle, 1);
-    } elsif ($htitle eq 'sm') {
-        $r = template_sm($tmp);
-    } elsif ($htitle eq 'transl') {
-        $r = txt_field_from_template($tmp, $htitle, (((scalar @$tmp)-3)/2)-1);  # 2 or 1, the last argument!
     } elsif ($htitle eq 'translit-Assamese2') {
         $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle =~ /^[uU]nicode$/) {
         $r = txt_field_from_template($tmp, $htitle, 0);
+
+    } elsif ($htitle eq 'Audio') {
+        $r = txt_field_from_template($tmp, $htitle, 1);
+    } elsif ($htitle eq 'cuneiform') {
+        $r = txt_field_from_template($tmp, $htitle, 1);
+    } elsif ($htitle =~ /^[lL]ang$/) {
+        $r = txt_field_from_template($tmp, $htitle, 1);
+    } elsif ($htitle eq 'rtl-lang') {
+        $r = txt_field_from_template($tmp, $htitle, 1);
+    } elsif ($htitle eq 'script') {
+        $r = txt_field_from_template($tmp, $htitle, 1);
+
+    } elsif ($htitle eq 'transl') {
+        # TODO
+        $r = txt_field_from_template($tmp, $htitle, (((scalar @$tmp)-3)/2)-1);  # 2 or 1, the last argument!
     }
 
     else {
         for (my $i = 3; $i < scalar @$tmp; $i += 2) {
             my $p = $tmp->[$i];
-            my $j = ($i - 3) / 2;
 
-            # TODO some parts have an index in the attrs instead of a name
             my $n = $p->content_twine->[1]->content_twine->[0];
 
             $n =~ s/^\s*(.*?)\s*$/$1/s;
