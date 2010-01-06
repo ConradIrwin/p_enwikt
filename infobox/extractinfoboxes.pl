@@ -254,7 +254,7 @@ sub xml_inside_infobox {
 
         if ($x) {
             if ($x->type_name eq 'template') {
-                template_inside_infobox($x->content_twine);
+                $r .= template_inside_infobox($x->content_twine);
             } elsif ($x->type_name eq 'comment') {
                 #print '<comment>', $x->content_twine->[0], '</comment>';
             } elsif ($x->type_name eq 'ext') {
@@ -280,7 +280,7 @@ sub xml_inside_infobox {
 sub template_inside_infobox {
     my $tmp = shift;
     my $apn = 0;    # anonymous template part number
-    my $r;
+    my $r = '';
 
     my $title = $tmp->[1]->content_twine->[0];
     $title =~ s/^\s*(.*?)\s*$/$1/s;
@@ -384,7 +384,7 @@ sub txt_field_from_template {
     my $tmp = shift;
     my $name = shift;
     my $i = shift;
-    my $r;
+    my $r = '';
 
     my $p = $tmp->[$i * 2 + 3];
 
@@ -394,7 +394,7 @@ sub txt_field_from_template {
     if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
         # value calls other templates
         #print "<$name-deep>";
-        $r = xml_inside_infobox($p->content_twine->[3]->content_twine);
+        $r .= xml_inside_infobox($p->content_twine->[3]->content_twine);
         #print "</$name-deep>";
     } else {
         my $v = $p->content_twine->[3]->content_twine->[0];
@@ -403,7 +403,7 @@ sub txt_field_from_template {
         $v = flatten_wikilinks($v);
 
         #print $v;
-        $r = $v;
+        $r .= $v;
     }
     return $r;
 }
