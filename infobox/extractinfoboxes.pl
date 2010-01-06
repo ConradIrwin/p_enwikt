@@ -15,8 +15,7 @@ use XML::Easy::Text qw(xml10_read_document);
 
 binmode STDOUT, 'utf8';
 
-use constant BATCHSIZE => 8;
-
+my $batchsize = 8;
 my $rv = 1; # 0 for success and 1 for error;
 my $deep;
 my $tdep;
@@ -27,8 +26,11 @@ my $mode = undef;
 my $etitle = undef;
 my $filter = undef;
 
-if (scalar @ARGV != 1 || $ARGV[0] !~ /^[lfs]$/) {
-    die "usage: xmleasy [l|f|s]";
+my %fieldnames;
+
+# TODO check arg 2
+if (scalar @ARGV < 1 || $ARGV[0] !~ /^[lfs]$/) {
+    die "usage: xmleasy [l|f|s] (batchsize)";
 } else {
     $mode = $ARGV[0];
 
@@ -41,6 +43,12 @@ if (scalar @ARGV != 1 || $ARGV[0] !~ /^[lfs]$/) {
     } elsif ($mode eq 's') {
         $etitle = 'Writing_system';
         $filter = 'family|iso|languages|name$|type$';
+    }
+
+    if (scalar @ARGV > 2 || $ARGV[1] !~ /^\d+$/) {
+        die "usage: xmleasy [l|f|s] (batchsize)";
+    } else {
+        $batchsize = $ARGV[1];
     }
 }
 
@@ -63,8 +71,8 @@ if ($jdata) {
 
         my @pageids = map $_->{pageid}, @$ei;
 
-        for (my $i = 0; $i < scalar @pageids; $i += BATCHSIZE) {
-            my $u = min $i + BATCHSIZE, scalar @pageids;
+        for (my $i = 0; $i < scalar @pageids; $i += $batchsize) {
+            my $u = min $i + $batchsize, scalar @pageids;
 
             my $uri = 'http://en.wikipedia.org/w/api.php' . 
                         '?format=json' .
@@ -108,10 +116,15 @@ if ($jdata) {
                 last;
             }
         }
+
+        say 'field usage';
+        foreach my $fn (sort {$fieldnames{$a} <=> $fieldnames{$b}} keys %fieldnames) {
+            say $fn, "\t", $fieldnames{$fn};
+        }
     }
 }
 
-print STDERR "xmleasy returning $rv\n";
+#print STDERR "xmleasy returning $rv\n";
 
 exit $rv;
 
@@ -178,12 +191,14 @@ sub infobox {
 
         $name =~ s/\s+/-/g;
 
-        if ($name =~ /$filter/) {
-            # handle numbered fields
-            if ($name =~ /^(.*?)(\d+)$/) {
-                ($name, $num) = ($1, $2) unless $1 eq 'iso';
-            }
+        # handle numbered fields
+        if ($name =~ /^(.*?)(\d+)$/) {
+            ($name, $num) = ($1, $2) unless $1 eq 'iso';
+        }
 
+        $fieldnames{$name} ++;
+
+        if ($name =~ /$filter/) {
             my $value;
 
             # value calls other templates?
