@@ -11,6 +11,7 @@ use strict;
 use JSON;
 use LWP::Simple;
 use List::Util qw(min);
+use Unicode::Collate;
 use XML::Easy::Text qw(xml10_read_document);
 
 binmode STDOUT, 'utf8';
@@ -26,6 +27,7 @@ my $mode = undef;
 my $etitle = undef;
 my $filter = undef;
 
+my %pages;
 my %fieldnames;
 
 # TODO check arg 2
@@ -100,7 +102,9 @@ if ($jdata) {
                         my $root_element = xml10_read_document($xml);
 
                         $deep = 0;
-                        page($i + $j, $v->{title}, $root_element->content_twine);
+                        if (my $page = page($i + $j, $v->{title}, $root_element->content_twine)) {
+                            $pages{$v->{title}} = $page;
+                        }
 
                         ++ $j;
                     }
@@ -115,6 +119,25 @@ if ($jdata) {
                 $rv = 1;
                 last;
             }
+        }
+
+        my $Collator = Unicode::Collate->new;
+
+        my $cnt = 0;
+        foreach my $page (sort {$Collator->cmp($a->{title}, $b->{title})} values %pages) {
+            print "($cnt)\n$page->{title}\n";
+            if ($page->{infoboxen}) {
+                for (my $bi = 0; $bi < scalar @{$page->{infoboxen}}; ++$bi) {
+                    my $infobox = $page->{infoboxen}->[$bi];
+                    say "\tInfobox $infobox->{kind}";
+                    foreach my $p (sort keys %{$infobox->{parts}}) {
+                        foreach my $n (sort {$a <=> $b} keys %{$infobox->{parts}->{$p}}) {
+                            say "\t\t$p", $n ? $n : '', "\t$infobox->{parts}->{$p}->{$n}";
+                        }
+                    }
+                }
+            }
+            ++$cnt;
         }
 
         say 'field usage';
@@ -148,36 +171,42 @@ sub page {
     my $pagetitle = shift;
     my $twine = shift;
 
-    print '(', $num, ")\n$pagetitle\n";
+    #print '(', $num, ")\n$pagetitle\n";
+    my $page = {num => $num, title => $pagetitle};
 
     while (my (undef, $xml) = splice(@$twine, 0, 2)) {
         if ($xml) {
             if ($xml->type_name eq 'template') {
-                page_template($xml->content_twine);
+                my $infobox = page_template($xml->content_twine);
+
+                if ($infobox) {
+                    push @{$page->{infoboxen}}, $infobox;
+                }
             }
         }
     }
+    return $page;
 }
 
 # handle XML template elements directly inside a page
 
 sub page_template {
     my $tmp = shift;
+    my $infobox;
 
     my $title = $tmp->[1]->content_twine->[0];
     $title =~ s/^\s*(.*?)\s*$/$1/s;
 
     if ($title =~ /^[iI]nfobox[ _](.*)$/) {
-        infobox($tmp, $1);
+        $infobox = infobox($tmp, $1);
     }
+    return $infobox;
 }
 
 sub infobox {
     my $ib = shift;
     my $kind = shift;
-    my %parts;
-
-    say "\tInfobox $kind";
+    my $infobox = {kind => $kind};
 
     for (my $i = 3; $i < scalar @$ib; $i += 2) {
         my $p = $ib->[$i];
@@ -191,7 +220,6 @@ sub infobox {
 
         $name =~ s/\s+/-/g;
 
-        # handle numbered fields
         if ($name =~ /^(.*?)(\d+)$/) {
             ($name, $num) = ($1, $2) unless $1 eq 'iso';
         }
@@ -214,16 +242,12 @@ sub infobox {
             $value = flatten_wikilinks($value);
 
             if ($value ne '') {
-                $parts{$name}->{$num} = $value;
+                $infobox->{parts}->{$name}->{$num} = $value;
             }
         }
     }
 
-    foreach my $p (sort keys %parts) {
-        foreach my $n (sort {$a <=> $b} keys %{$parts{$p}}) {
-            say "\t\t$p", $n ? $n : '', "\t$parts{$p}->{$n}";
-        }
-    }
+    return $infobox;
 }
 
 sub xml_inside_infobox {
