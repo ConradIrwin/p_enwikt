@@ -15,6 +15,7 @@ use Unicode::Collate;
 use XML::Easy::Text qw(xml10_read_document);
 
 binmode STDOUT, 'utf8';
+binmode STDERR, 'utf8';
 
 my $batchsize = 8;
 my $rv = 1; # 0 for success and 1 for error;
@@ -38,10 +39,10 @@ if (scalar @ARGV < 1 || $ARGV[0] !~ /^[lfs]$/) {
 
     if ($mode eq 'l') {
         $etitle = 'Language';
-        $filter = 'fam\d|iso|name$|nativename$|script$';
+        $filter = 'fam|iso|name$|nativename$|script$';
     } elsif ($mode eq 'f') {
         $etitle = 'Language_family';
-        $filter = 'child\d|iso|name$';
+        $filter = 'child|iso|name$';
     } elsif ($mode eq 's') {
         $etitle = 'Writing_system';
         $filter = 'family|iso|languages|name$|type$';
@@ -123,9 +124,8 @@ if ($jdata) {
 
         my $Collator = Unicode::Collate->new;
 
-        my $cnt = 0;
         foreach my $page (sort {$Collator->cmp($a->{title}, $b->{title})} values %pages) {
-            print "($cnt)\n$page->{title}\n";
+            print "$page->{title}\n";
             if ($page->{infoboxen}) {
                 for (my $bi = 0; $bi < scalar @{$page->{infoboxen}}; ++$bi) {
                     my $infobox = $page->{infoboxen}->[$bi];
@@ -137,12 +137,14 @@ if ($jdata) {
                     }
                 }
             }
-            ++$cnt;
         }
 
-        say 'field usage';
+        say "\npage count:";
+        say "\t", scalar keys %pages;
+
+        say "\nfield usage:";
         foreach my $fn (sort {$fieldnames{$a} <=> $fieldnames{$b}} keys %fieldnames) {
-            say $fn, "\t", $fieldnames{$fn};
+            say "\t", $fn, "\t", $fieldnames{$fn};
         }
     }
 }
@@ -171,13 +173,12 @@ sub page {
     my $pagetitle = shift;
     my $twine = shift;
 
-    #print '(', $num, ")\n$pagetitle\n";
     my $page = {num => $num, title => $pagetitle};
 
     while (my (undef, $xml) = splice(@$twine, 0, 2)) {
         if ($xml) {
             if ($xml->type_name eq 'template') {
-                my $infobox = page_template($xml->content_twine);
+                my $infobox = page_template($xml->content_twine, $pagetitle);
 
                 if ($infobox) {
                     push @{$page->{infoboxen}}, $infobox;
@@ -192,19 +193,22 @@ sub page {
 
 sub page_template {
     my $tmp = shift;
+    my $pagetitle = shift;
     my $infobox;
 
     my $title = $tmp->[1]->content_twine->[0];
     $title =~ s/^\s*(.*?)\s*$/$1/s;
 
     if ($title =~ /^[iI]nfobox[ _](.*)$/) {
-        $infobox = infobox($tmp, $1);
+        $infobox = infobox($tmp, $pagetitle, $title, $1);
     }
     return $infobox;
 }
 
 sub infobox {
     my $ib = shift;
+    my $pagetitle = shift;
+    my $tmptitle = shift;
     my $kind = shift;
     my $infobox = {kind => $kind};
 
@@ -214,9 +218,13 @@ sub infobox {
         my $name = $p->content_twine->[1]->content_twine->[0];
         my $num = 0;
 
-        $name =~ s/^\s*(.*?)\s*$/$1/s if $name;
+        if (defined $name) {
+            $name =~ s/^\s*(.*?)\s*$/$1/s;
+        }
 
-        $name = 'ib-part' if $name eq '';
+        unless (defined $name && $name ne '') {
+            $name = 'ib-part';
+        }
 
         $name =~ s/\s+/-/g;
 
@@ -236,13 +244,15 @@ sub infobox {
                 $value = $p->content_twine->[3]->content_twine->[0];
             }
 
-            $value =~ s/^\s*(.*?)\s*$/$1/s if $value;
-            $value =~ s/\s+/ /gs;
+            if ($value) {
+                $value =~ s/^\s*(.*?)\s*$/$1/s;
+                $value =~ s/\s+/ /gs;
 
-            $value = flatten_wikilinks($value);
+                $value = flatten_wikilinks($value);
 
-            if ($value ne '') {
-                $infobox->{parts}->{$name}->{$num} = $value;
+                if ($value ne '') {
+                    $infobox->{parts}->{$name}->{$num} = $value;
+                }
             }
         }
     }
