@@ -10,9 +10,12 @@ use strict;
 
 use JSON;
 use LWP::Simple;
+use List::Util qw(min);
 use XML::Easy::Text qw(xml10_read_document);
 
 binmode STDOUT, 'utf8';
+
+use constant BATCHSIZE => 8;
 
 my $deep;
 my $tdep;
@@ -59,12 +62,14 @@ if ($jdata) {
 
         my @pageids = map $_->{pageid}, @$ei;
 
-        for (my $i = 0; $i < scalar @pageids; $i += 2) {
+        for (my $i = 0; $i < scalar @pageids; $i += BATCHSIZE) {
+            my $u = min $i + BATCHSIZE, scalar @pageids;
+
             my $uri = 'http://en.wikipedia.org/w/api.php' . 
                         '?format=json' .
                         '&action=query' .
                         '&prop=revisions' .
-                        '&pageids=' . join('|', @pageids[$i..$i+1]) .
+                        '&pageids=' . join('|', @pageids[$i..$u-1]) .
                         # TODO sometimes the infobox is not in s0, eg Tifinagh
                         '&rvsection=0' .
                         '&rvprop=content' .
@@ -115,18 +120,14 @@ sub flatten_wikilinks {
 sub page {
     my $num = shift;
     my $pagetitle = shift;
-    my $t = shift;
+    my $twine = shift;
 
     print '(', $num, ")\n$pagetitle\n";
 
-    while (my ($s, $x) = splice(@$t, 0, 2)) {
-        if ($x) {
-            if ($x->type_name eq 'template') {
-                page_template($x->content_twine);
-            #} else {
-            #    print '##WEIRD<', $x->type_name, '>##';
-            #    $tdep = -1;
-            #    unexpected_xml($x->content_twine);
+    while (my (undef, $xml) = splice(@$twine, 0, 2)) {
+        if ($xml) {
+            if ($xml->type_name eq 'template') {
+                page_template($xml->content_twine);
             }
         }
     }
@@ -207,8 +208,6 @@ sub xml_inside_infobox {
 
     while (my ($s, $x) = splice(@$t, 0, 2)) {
         my $s2 = $s;
-        #$s2 =~ s/^\s*(.*?)\s*$/$1/s;
-        #$s2 =~ s/\s+/ /gs;
 
         $s2 = flatten_wikilinks($s2);
 
@@ -223,10 +222,6 @@ sub xml_inside_infobox {
                 if ($extname eq 'nowiki') {
                     $r .= $x->content_twine->[5]->content_twine->[0];
                 }
-            #} else {
-            #    $r .= '##WEIRD<' . $x->type_name . '>##';
-            #    $tdep = -1;
-            #    unexpected_xml($x->content_twine);
             }
         }
     }
@@ -315,8 +310,6 @@ sub template_inside_infobox {
             } else {
                 my $v = $p->content_twine->[3]->content_twine->[0];
 
-                #$v =~ s/^\s*(.*?)\s*$/$1/s;
-
                 if ($v ne '') {
                     $r .= $v;
                 }
@@ -337,17 +330,12 @@ sub txt_field_from_template {
     if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
         $r .= xml_inside_infobox($p->content_twine->[3]->content_twine);
     } else {
-        my $v = $p->content_twine->[3]->content_twine->[0];
-
-        #$v =~ s/^\s*(.*?)\s*$/$1/s;
-
-        #$v = flatten_wikilinks($v);
-
-        $r .= $v;
+        $r .= $p->content_twine->[3]->content_twine->[0];
     }
     return $r;
 }
 
+# small caps template
 sub template_sm {
     my $tmp = shift;
     my $r;
@@ -358,8 +346,6 @@ sub template_sm {
         $r = '<sm-deep>' . xml_inside_infobox($p->content_twine->[3]->content_twine) . '</sm-deep>';
     } else {
         my $v = $p->content_twine->[3]->content_twine->[0];
-
-        #$v =~ s/^\s*(.*?)\s*$/$1/s;
 
         $r = uc $v;
     }
