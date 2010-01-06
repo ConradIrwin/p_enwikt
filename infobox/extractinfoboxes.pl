@@ -2,6 +2,8 @@
 
 # look at writing system infoboxes on Wikipedia
 
+use feature 'say';
+
 use utf8;
 use warnings;
 use strict;
@@ -57,7 +59,7 @@ if ($jdata) {
 
         my @pageids = map $_->{pageid}, @$ei;
 
-        print "<infoboxen>\n";
+        #print "<infoboxen>\n";
 
         for (my $i = 0; $i < scalar @pageids; $i += 2) {
             my $uri = 'http://en.wikipedia.org/w/api.php' . 
@@ -92,15 +94,15 @@ if ($jdata) {
                         my $root_element = xml10_read_document($xml);
 
                         $deep = 0;
-                        page($v->{title}, $root_element->content_twine);
+                        page($i + $j, $v->{title}, $root_element->content_twine);
 
-                        print "\n\n";
+                        #print "\n\n";
                         ++ $j;
                     }
                 }
             }
         }
-        print "</infoboxen>\n";
+        #print "</infoboxen>\n";
     }
 }
 
@@ -111,7 +113,7 @@ sub flatten_wikilinks {
 
     # [[Image:Phoenician mem.svg|12px|𐤌‏]]
     # image links
-    $t =~ s/\[\[Image:[^\|]*?\|[^\|]*?(?:\|([^\]]*?))?\]\]/$1/g;
+    $t =~ s/\[\[(?:Image|File):[^\|]*?\|[^\|]*?(?:\|([^\]]*?))?\]\]/$1/g;
 
     # normal links
     $t =~ s/\[\[(?:[^\]]*?\|)?([^\]]*?)\]\](\w*)?/$1$2/g;
@@ -123,10 +125,12 @@ sub flatten_wikilinks {
 # handle XML elements inside a page
 
 sub page {
+    my $num = shift;
     my $pagetitle = shift;
     my $t = shift;
 
-    print "<page title=\"$pagetitle\">\n";
+    #print "<page title=\"$pagetitle\">\n";
+    print '(', $num, ")\n$pagetitle\n";
 
     while (my ($s, $x) = splice(@$t, 0, 2)) {
         my $s2 = $s;
@@ -153,7 +157,7 @@ sub page {
             }
         }
     }
-    print "</page>\n";
+    #print "</page>\n";
 }
 
 # handle XML template elements directly inside a page
@@ -172,8 +176,10 @@ sub page_template {
 sub infobox {
     my $ib = shift;
     my $kind = shift;
+    my %parts;
 
-    print "<infobox>\n";
+    #print "<infobox>\n";
+    say "\tInfobox $kind";
 
     for (my $i = 3; $i < scalar @$ib; $i += 2) {
         my $p = $ib->[$i];
@@ -181,7 +187,7 @@ sub infobox {
 
         # TODO some parts have an index in the attrs instead of a name
         my $name = $p->content_twine->[1]->content_twine->[0];
-        my $num = undef;
+        my $num = 0;
 
         $name =~ s/^\s*(.*?)\s*$/$1/s if $name;
 
@@ -203,31 +209,39 @@ sub infobox {
             #$attr .= " i=\"$j\"";
 
             my $open = "<$name$attr>";
-
+            my $value;
             my $close = "</$name>";
 
             # value calls other templates?
             if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
-                print $open;
-                xml_inside_infobox($p->content_twine->[3]->content_twine);
-                print "$close\n";
+                $value = xml_inside_infobox($p->content_twine->[3]->content_twine);
             } else {
-                my $value = $p->content_twine->[3]->content_twine->[0];
+                $value = $p->content_twine->[3]->content_twine->[0];
                 $value =~ s/^\s*(.*?)\s*$/$1/s if $value;
 
                 $value = flatten_wikilinks($value);
+            }
 
-                if ($value ne '') {
-                    print "$open$value$close\n";
-                }
+            if ($value ne '') {
+                #print "$open$value$close\n";
+                #print "\t\t$name\t$value\n";
+                $parts{$name}->{$num} = $value;
             }
         }
     }
-    print "</infobox>\n";
+
+    foreach my $p (sort keys %parts) {
+        foreach my $n (sort {$a <=> $b} keys %{$parts{$p}}) {
+            say "\t\t$p", $n ? $n : '', "\t$parts{$p}->{$n}";
+        }
+    }
+
+    #print "</infobox>\n";
 }
 
 sub xml_inside_infobox {
     my $t = shift;
+    my $r = '';
 
     while (my ($s, $x) = splice(@$t, 0, 2)) {
         my $s2 = $s;
@@ -236,7 +250,7 @@ sub xml_inside_infobox {
 
         $s2 = flatten_wikilinks($s2);
 
-        print $s2;
+        $r .= $s2;
 
         if ($x) {
             if ($x->type_name eq 'template') {
@@ -249,22 +263,24 @@ sub xml_inside_infobox {
                 my $extname = $x->content_twine->[1]->content_twine->[0];
                 if ($extname eq 'nowiki') {
                     my $extcont = $x->content_twine->[5]->content_twine->[0];
-                    print $extcont;
+                    $r .= $extcont;
                 } else {
                     #print "<ext-$extname/>";
                 }
             } else {
-                print '##WEIRD<', $x->type_name, '>##';
+                $r .= '##WEIRD<' . $x->type_name . '>##';
                 $tdep = -1;
                 unexpected_xml($x->content_twine);
             }
         }
     }
+    return $r;
 }
 
 sub template_inside_infobox {
     my $tmp = shift;
     my $apn = 0;    # anonymous template part number
+    my $r;
 
     my $title = $tmp->[1]->content_twine->[0];
     $title =~ s/^\s*(.*?)\s*$/$1/s;
@@ -277,54 +293,54 @@ sub template_inside_infobox {
         #
 
     } elsif ($htitle eq 'ndash') {
-        print '–';
+        $r = '–';
     } elsif ($htitle eq 'okina') {
-        print 'ʻ';
+        $r = 'ʻ';
 
     } elsif ($htitle eq 'Audio') {
-        txt_field_from_template($tmp, $htitle, 1);
+        $r = txt_field_from_template($tmp, $htitle, 1);
     } elsif ($htitle eq 'Coptic') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'cuneiform') {
-        txt_field_from_template($tmp, $htitle, 1);
+        $r = txt_field_from_template($tmp, $htitle, 1);
     } elsif ($htitle eq 'Hebrew') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle =~ /^IAST2?$/) {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle =~ /^IPA2?$/) {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'IPA-all') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'IPA-en') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle =~ /^[lL]ang$/) {
-        txt_field_from_template($tmp, $htitle, 1);
+        $r = txt_field_from_template($tmp, $htitle, 1);
     } elsif ($htitle eq 'lang-Assamese2') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'lang-la') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'Nastaliq') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'nowrap') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'Polytonic') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle eq 'rtl-lang') {
-        txt_field_from_template($tmp, $htitle, 1);
+        $r = txt_field_from_template($tmp, $htitle, 1);
     } elsif ($htitle eq 'script') {
-        txt_field_from_template($tmp, $htitle, 1);
+        $r = txt_field_from_template($tmp, $htitle, 1);
     } elsif ($htitle eq 'sm') {
-        template_sm($tmp);
+        $r = template_sm($tmp);
     } elsif ($htitle eq 'transl') {
-        txt_field_from_template($tmp, $htitle, (((scalar @$tmp)-3)/2)-1);  # 2 or 1, the last argument!
+        $r = txt_field_from_template($tmp, $htitle, (((scalar @$tmp)-3)/2)-1);  # 2 or 1, the last argument!
     } elsif ($htitle eq 'translit-Assamese2') {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     } elsif ($htitle =~ /^[uU]nicode$/) {
-        txt_field_from_template($tmp, $htitle, 0);
+        $r = txt_field_from_template($tmp, $htitle, 0);
     }
 
     else {
-        print "<template-$htitle>";
+        #$r = "<template-$htitle>";
 
         for (my $i = 3; $i < scalar @$tmp; $i += 2) {
             my $p = $tmp->[$i];
@@ -346,26 +362,29 @@ sub template_inside_infobox {
 
             if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
                 # value calls other templates
-                print $open;
-                xml_inside_infobox($p->content_twine->[3]->content_twine);
-                print $close;
+                #$r .= $open;
+                $r .= xml_inside_infobox($p->content_twine->[3]->content_twine);
+                #$r .= $close;
             } else {
                 my $v = $p->content_twine->[3]->content_twine->[0];
                 $v =~ s/^\s*(.*?)\s*$/$1/s;
 
                 if ($v ne '') {
-                    print $open, $v, $close;
+                    #$r .= $open . $v . $close;
+                    $r .= $v;
                 }
             }
         }
-        print "</template-$htitle>";
+        #$r .= "</template-$htitle>";
     }
+    return $r;
 }
 
 sub txt_field_from_template {
     my $tmp = shift;
     my $name = shift;
     my $i = shift;
+    my $r;
 
     my $p = $tmp->[$i * 2 + 3];
 
@@ -375,7 +394,7 @@ sub txt_field_from_template {
     if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
         # value calls other templates
         #print "<$name-deep>";
-        xml_inside_infobox($p->content_twine->[3]->content_twine);
+        $r = xml_inside_infobox($p->content_twine->[3]->content_twine);
         #print "</$name-deep>";
     } else {
         my $v = $p->content_twine->[3]->content_twine->[0];
@@ -383,26 +402,30 @@ sub txt_field_from_template {
 
         $v = flatten_wikilinks($v);
 
-        print $v;
+        #print $v;
+        $r = $v;
     }
+    return $r;
 }
 
 sub template_sm {
     my $tmp = shift;
+    my $r;
 
     my $p = $tmp->[0 * 2 + 3];
 
     if (scalar @{$p->content_twine->[3]->content_twine} > 1) {
         # value calls other templates
-        print "<sm-deep>";
-        xml_inside_infobox($p->content_twine->[3]->content_twine);
-        print "</sm-deep>";
+        $r = "<sm-deep>";
+        $r .= xml_inside_infobox($p->content_twine->[3]->content_twine);
+        $r .= "</sm-deep>";
     } else {
         my $v = $p->content_twine->[3]->content_twine->[0];
         $v =~ s/^\s*(.*?)\s*$/$1/s;
 
-        print uc $v;
+        $r = uc $v;
     }
+    return $r;
 }
 
 # only used when unexpected XML is hit
