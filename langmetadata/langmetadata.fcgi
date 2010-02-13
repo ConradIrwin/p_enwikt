@@ -186,7 +186,7 @@ my $metadata = {
     ik=>{n=>'Inupiak'},
     ike=>{sc=>'Cans',fam=>'esx',geo=>'CA'},
     ikt=>{sc=>'Cans',fam=>'esx',geo=>'CA'},
-    ims=>{sc=>'Ital',n=>'Marsian'},
+    ims=>{n=>'Marsian'},
     io=>{n=>'Ido'},
     is=>{sc=>'Latn',g=>'mfn',p=>1,alt=>0,n=>'Icelandic',fam=>'gmq',geo=>'IS'},
     it=>{sc=>'Latn',g=>'mf',p=>1,alt=>0,n=>'Italian',fam=>'roa',geo=>['CH','IT','SM']},
