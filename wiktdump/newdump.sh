@@ -31,19 +31,33 @@ else
 fi
 
 if [ $wget_and_unzip -eq 1 ] ; then
-    echo "getting and unzipping..."
+    echo "will get and unzip..."
 else
     echo "won't get and unzip..."
 fi
 
 if [ $low_level_index -eq 1 ] ; then
-    echo "will create low-level index of dump files...";
+    echo "will create low-level index of dump files..."
 else
-    echo "won't create low-level index of dump files...";
+    echo "won't create low-level index of dump files..."
 fi
 
+echo "getting and unzipping pages and categories..."
+
 if [ $wget_and_unzip -eq 1 ] ; then
-    wget -O - http://download.wikipedia.org/enwiktionary/$date/enwiktionary-$date-pages-articles.xml.bz2 | bzip2 -d > /mnt/user-store/enwiktionary-$date-pages-articles.xml & wget -O - http://download.wikimedia.org/enwiktionary/$date/enwiktionary-$date-categorylinks.sql.gz | gzip -cd > /mnt/user-store/enwiktionary-$date-categorylinks.sql
+    wget -O - http://download.wikipedia.org/enwiktionary/$date/enwiktionary-$date-pages-articles.xml.bz2 | bzip2 -d > /mnt/user-store/enwiktionary-$date-pages-articles.xml & pagepid=$!; wget -O - http://download.wikimedia.org/enwiktionary/$date/enwiktionary-$date-categorylinks.sql.gz | gzip -cd > /mnt/user-store/enwiktionary-$date-categorylinks.sql & catpid=$!
+fi
+
+wait ${pagepid}; pagerc=$?
+wait ${catpid}; catrc=$?
+
+echo "finished getting and unzipping pages and categories."
+
+if [ $pagerc -ne 0 ] || [ $catrc -ne 0 ] ; then
+    echo "page and/or cat failed (${pagerc}, ${catrc})"
+    exit 1
+else
+    echo "page and cat both ok";
 fi
 
 if [ $low_level_index -eq 1 ] ; then
