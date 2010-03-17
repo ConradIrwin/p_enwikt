@@ -36,8 +36,9 @@ getopts('c:dFn:');
 
 my $tick_num = 0;
 
-# set a useragent
+# set a useragent and timeout
 $ua->agent('hippiebot');
+$ua->timeout(60);
 
 # slurp dumped enwikt language code : name mappings
 open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
@@ -1055,22 +1056,20 @@ sub do_suggest {
         }
     }
 
-    # call some toolserver tools based on language name
-    for my $ln (keys %names) {
-        print STDERR "near-$ln\n";
-        $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=' . $ln . '&term=' . $term;
+    # get previous and next terms across all language names
+    print STDERR "near-*\n";
+    $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=*&term=' . $term;
 
-        if ($json) {
-            $res = $js->decode($json);
+    if ($json) {
+        $res = $js->decode($json);
 
-            if (exists $res->{prev}) {
-                print "\t$res->{prev}->[0]\n";
-                $dym{$res->{prev}->[0]} += 0.5;
-            }
-            if (exists $res->{next}) {
-                print "\t$res->{next}->[0]\n";
-                $dym{$res->{next}->[0]} += 0.5;
-            }
+        if (exists $res->{prev}) {
+            print "\t$res->{prev}->[0]\n";
+            $dym{$res->{prev}->[0]} += 0.5;
+        }
+        if (exists $res->{next}) {
+            print "\t$res->{next}->[0]\n";
+            $dym{$res->{next}->[0]} += 0.5;
         }
     }
 
