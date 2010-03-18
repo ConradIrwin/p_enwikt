@@ -9,15 +9,15 @@ use strict;
 use utf8; # needed due to literal unicode for stripping diacritics
 
 use File::HomeDir;
+use Getopt::Std;
 use HTML::Entities;
 use JSON -support_by_pp;
 use LWP::Simple qw(get $ua);
 use LWP::UserAgent;
 use POE;
-use POE::Component::IRC::Plugin::BotAddressed;
 use POE::Component::IRC::Common qw(irc_to_utf8);
+use POE::Component::IRC::Plugin::BotAddressed;
 use POE::Component::IRC::State;
-use Getopt::Std;
 use Sys::Hostname;
 use Tie::TextDir;
 use Time::Duration;
@@ -198,6 +198,9 @@ POE::Session->create(
         irc_public        => \&on_public,
         irc_msg           => \&on_msg,
         irc_bot_addressed => \&on_bot_addressed,
+        irc_disconnected  => \&on_disconnected,
+        irc_error         => \&on_error,
+        irc_socketerr     => \&on_socketerr,
         feeds             => \&on_feeds,
     },
 );
@@ -446,6 +449,33 @@ sub on_feeds {
 
     $kernel->delay( feeds => $feed_delay );
     ++ $tick_num;
+}
+
+# The bot has received a disconnection message.
+sub on_disconnected {
+    my ( $kernel, $server ) = @_[ KERNEL, ARG0 ];
+    my $resps;
+
+    my $ts = scalar localtime;
+    print "DISCONNECTED [$ts] $server\n";
+}
+
+# The bot has received an error message.
+sub on_error {
+    my ( $kernel, $err ) = @_[ KERNEL, ARG0 ];
+    my $resps;
+
+    my $ts = scalar localtime;
+    print "ERROR [$ts] $err\n";
+}
+
+# The bot has received a socket error message.
+sub on_socketerr {
+    my ( $kernel, $err ) = @_[ KERNEL, ARG0 ];
+    my $resps;
+
+    my $ts = scalar localtime;
+    print "SOCKETERR [$ts] $err\n";
 }
 
 #### do_ implementations ####
