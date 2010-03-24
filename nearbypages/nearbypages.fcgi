@@ -1,20 +1,22 @@
-#!/usr/bin/perl -I/home/hippietrail/lib
+#!/usr/bin/perl -I/home/hippietrail/perl5/lib/perl5
 
 # nearbypages <language name> <term>
 
-use utf8;
+#use utf8;
 use strict;
 
 use CGI;
+use DBI;
 use FCGI;
 use Getopt::Long;
 use locale;
 use MediaWiki::API;
 use POSIX;
+use Unicode::Collate;
 use URI::Escape;
 
-binmode STDIN, ':utf8';
-binmode STDOUT, ':utf8';
+#binmode STDIN, ':utf8';
+#binmode STDOUT, ':utf8';
 
 my $scriptmode = 'cli';
 
@@ -25,9 +27,13 @@ my $cli_retval = -1; # fail by default
 my $mw = MediaWiki::API->new();
 $mw->{config}->{api_url} = 'http://en.wiktionary.org/w/api.php';
 
+# initialise Unicode Collation Algorithm
+my $uca = Unicode::Collate->new;
+
 # TODO it would be better to choose one from the list. this could change.
 my $uname = `uname`;
 chomp $uname;
+# TODO default to "UCA"
 my $default_locale = $uname eq 'SunOS' ? 'en_US.UTF-8' : 'en_US.utf8';
 
 # which language codes do we have locale support for?
@@ -63,7 +69,6 @@ foreach (@pairs) {
         #print STDERR "language code template rejected: '$c'\n";
     }
 }
-#use Data::Dumper; print Dumper \%langcodes;
 
 # FastCGI loop
 
@@ -79,9 +84,6 @@ while (FCGI::accept >= 0) {
     my $inputterm = '';
     my $numprev = 0;
     my $numnext = 0;
-    my $iscached = 0;
-    my $words = undef;
-    my $locale = '';
 
     if (exists $opts{dumpsource}) {
         $cli_retval = dumpsource();
@@ -94,9 +96,10 @@ while (FCGI::accept >= 0) {
         $cli_retval = dumperror(1, 'no term specified', $opts{callback});
     } elsif (exists $opts{num} && (exists $opts{numprev} || exists $opts{numnext})) {
         $cli_retval = dumperror(1, 'num cannot be used with numprev or numnext', $opts{callback});
+
     } else {
-        $langname = $opts{langname};
-        $inputterm = $opts{term};
+        # set up parameters
+
         if (defined $opts{numprev} || defined $opts{numnext}) {
             $numprev = $opts{numprev} if defined $opts{numprev};
             $numnext = $opts{numnext} if defined $opts{numnext};
@@ -104,44 +107,168 @@ while (FCGI::accept >= 0) {
             $numprev = $numnext = defined $opts{num} ? $opts{num} : 1;
         }
 
-        # see if we have a locale for this language
-        # TODO currently we pick the first locale for this language
-        # TODO but wolfsbane Solaris has different collation orders for different
-        # TODO locales of the same language. for "en" only "en_US" will order
-        # TODO "treeline", "tree line", and "tree-line" near each other
-        # TODO whereas on nightshade Linux all "en_??" locales sort the same
-        my $key = undef;
-        while (my ($k, $v) = each %langcodes) {
-            if ($v->{enwiktname} eq $langname) {
-                $key = $k;
-                # XXX if we use last with each, each won't start from the beginning next time!
-                #last;
-            }
-        }
-        # normally we use the language code as the hash key
-        # since the locale is keyed off the language code
-        # but if we can find no language code we use the langauge name
-        # as the hash key. This allows us to cache langauges for which
-        # we have no language code
-        $key = $langname unless (defined $key);
+        my $results = {
+            langname  => $opts{langname},
+            inputterm => $opts{term},
+        };
+        $results->{seq} = $opts{seq} if defined $opts{seq};
 
-        $locale = exists $langcodes{$key}->{locale} ? $langcodes{$key}->{locale} : $default_locale;
-        setlocale(LC_COLLATE, $locale);
-
-        if (exists $langcodes{$key}->{words}) {
-            $iscached = 1;
-            $words = $langcodes{$key}->{words};
-        # TODO for langname */Browse we need to sort and search on disk
-        } elsif ($words = slurpsort($langname)) {
-            $iscached = 0;
-            $langcodes{$key}->{words} = $words;
+        if ($opts{langname} eq '*') {
+            $cli_retval = nearby_panlang_uca($opts{term}, $numprev, $numnext, $results, $opts{callback});
         } else {
-            $cli_retval = dumperror(1, "couldn't open word file for '$langname'", $opts{callback});
+            $cli_retval = nearby_lang_locale_wordlist($opts{langname}, $opts{term}, $numprev, $numnext, $results, $opts{callback});
         }
+
+        dumpresults($results, 'json', $opts{callback});
+    }
+}
+
+exit $cli_retval;
+
+##########################################
+
+sub nearby_panlang_uca {
+    my $inputterm = shift;
+    my $numprev = shift;
+    my $numnext = shift;
+    my $results = shift;
+    my $opt_callback = shift;
+
+    my $retval = -1;    # fail by default
+
+    # TODO
+    #print STDERR "connecting...\n";
+    my $dbh = DBI->connect(
+       'DBI:mysql:' .
+            'database=u_hippietrail;' .
+            'host=sql.toolserver.org;' .
+            'mysql_read_default_group=client;' .
+            'mysql_read_default_file=/home/hippietrail/.my.cnf',
+            undef, undef
+        );
+
+    if ($dbh) {
+        #print STDERR "connected.\n";
+
+        my $title_to_seq = $dbh->prepare('SELECT seq FROM seq INNER JOIN title USING (page_id) WHERE page_title = ?');
+        if ($title_to_seq) {
+            if ($title_to_seq->execute($inputterm)) {
+                my $seq;
+                if (($seq) = $title_to_seq->fetchrow_array()) {
+                    my $seq_to_titles = $dbh->prepare('SELECT page_title FROM seq INNER JOIN title USING (page_id) WHERE seq >= ? AND seq <= ?');
+                    if ($seq_to_titles) {
+                        if ($seq_to_titles->execute($seq - $numprev, $seq + $numnext)) {
+                            $results->{locale} = 'UCA';
+                            my $which = 'prev';
+                            my $i = 0;
+                            while (my ($t) = $seq_to_titles->fetchrow_array()) {
+                                if ($i++ == $numprev) {
+                                    $results->{exists} = 1;
+                                    $which = 'next';
+                                } else {
+                                    push @{$results->{$which}}, $t;
+                                }
+                            }
+                            $retval = 0;
+                        } else {
+                            print STDERR "execute 'seq to titles' failed\n";
+                        }
+                    } else {
+                        print STDERR "failed to prepare 'seq to titles' statement\n";
+                    }
+                } else {
+                    #binmode STDERR, ':utf8';
+                    #print STDERR "didn't fetch seq for '$inputterm'\n";
+                    my $sortkey = $uca->getSortKey($inputterm);
+
+                    my ($prev, $next) = bsearch_db($dbh, $inputterm, $sortkey);
+
+                    my $seq_to_titles = $dbh->prepare('SELECT page_title FROM seq INNER JOIN title USING (page_id) WHERE seq >= ? AND seq <= ?');
+                    if ($seq_to_titles) {
+                        if ($seq_to_titles->execute($prev - $numprev + 1, $next + $numnext - 1)) {
+                            $results->{locale} = 'UCA';
+                            my $which = 'prev';
+                            my $i = 0;
+                            while (my ($t) = $seq_to_titles->fetchrow_array()) {
+                                if ($i++ == $numprev) {
+                                    $results->{exists} = 0;
+                                    $which = 'next';
+                                }
+                                push @{$results->{$which}}, $t;
+                            }
+                            $retval = 0;
+                        } else {
+                            print STDERR "execute 'seq to titles' failed\n";
+                        }
+                    } else {
+                        print STDERR "failed to prepare 'seq to titles' statement\n";
+                    }
+                }
+            } else {
+                print STDERR "execute 'title to seq' failed\n";
+            }
+        } else {
+            print STDERR "failed to prepare 'title to seq' statement\n";
+        }
+    } else {
+        print STDERR "didn't connect.\n";
+    }
+
+    return $retval;
+}
+
+sub nearby_lang_locale_wordlist {
+    my $langname = shift;
+    my $inputterm = shift;
+    my $numprev = shift;
+    my $numnext = shift;
+    my $results = shift;
+    my $opt_callback = shift;
+
+    my $retval = -1;    # fail by default
+    my $iscached = 0;
+    my $words = undef;
+    my $locale = '';
+
+    # see if we have a locale for this language
+    # TODO currently we pick the first locale for this language
+    # TODO but wolfsbane Solaris has different collation orders for different
+    # TODO locales of the same language. for "en" only "en_US" will order
+    # TODO "treeline", "tree line", and "tree-line" near each other
+    # TODO whereas on nightshade Linux all "en_??" locales sort the same
+    my $key = undef;
+    while (my ($k, $v) = each %langcodes) {
+        if ($v->{enwiktname} eq $langname) {
+            $key = $k;
+            # XXX if we use last with each, each won't start from the beginning next time!
+            #last;
+        }
+    }
+    # normally we use the language code as the hash key
+    # since the locale is keyed off the language code
+    # but if we can find no language code we use the langauge name
+    # as the hash key. This allows us to cache langauges for which
+    # we have no language code
+    $key = $langname unless (defined $key);
+
+    $locale = exists $langcodes{$key}->{locale} ? $langcodes{$key}->{locale} : $default_locale;
+    setlocale(LC_COLLATE, $locale);
+
+    # get full list of words for this language from cache or disk
+
+    if (exists $langcodes{$key}->{words}) {
+        $iscached = 1;
+        $words = $langcodes{$key}->{words};
+
+    } elsif ($words = slurpsort($langname)) {
+        $iscached = 0;
+        $langcodes{$key}->{words} = $words;
+    } else {
+        $cli_retval = dumperror(1, "couldn't open word file for '$langname'", $opt_callback);
     }
 
     if ($words) {
-        my ($prev, $next) = bsearch($inputterm, $words);
+        my ($prev, $next) = bsearch_array($inputterm, $words);
 
         my (@prevs, $exists, @nexts);
 
@@ -163,30 +290,18 @@ while (FCGI::accept >= 0) {
             $d -= $d - scalar @$words;
         }
 
-        my $results = {
-            langname    => $langname,
-            locale      => $locale,
-            iscached    => $iscached,
-            inputterm   => $inputterm,
-            exists      => $next - $prev == 2
-        };
+        $results->{locale} = $locale;
+        $results->{iscached} = $iscached;
+        $results->{exists} = $next - $prev == 2;
 
         $results->{prev} = [@$words[$a .. $b-1]] if $a != $b;
         $results->{next} = [@$words[$c .. $d-1]] if $c != $d;
 
-        $results->{seq} = $opts{seq} if exists $opts{seq};
-
-        dumpresults($results, 'json', $opts{callback});
-
-        $cli_retval = 0;
+        $retval = 0;
     }
+    return $retval;
 }
 
-exit $cli_retval;
-
-##########################################
-
-# TODO for langname */Browse we need to sort and search on disk
 sub slurpsort {
     my $retval;
     my $name = shift;
@@ -225,11 +340,10 @@ sub slurpsort {
     return $retval;
 }
 
-# TODO for langname */Browse we need to sort and search on disk
-sub bsearch {
-    my ($x, $a) = @_;            # search for x in array a
-    my ($l, $u) = (0, @$a - 1);  # lower, upper end of search interval
-    my $i;                       # index of probe
+sub bsearch_array {
+    my ($x, $a) = @_;           # search for x in array a
+    my ($l, $u) = (0, @$a - 1); # lower, upper end of search interval
+    my $i;                      # index of probe
     my $r = undef;
 
     while ($l <= $u) {
@@ -242,7 +356,7 @@ sub bsearch {
             $u = $i-1;
         } 
         else {
-            $r = [$i-1, $i+1]; # found
+            $r = [$i-1, $i+1];  # found
             last;
         }
     }
@@ -250,6 +364,40 @@ sub bsearch {
     $r = [$l-1, $l] unless defined $r; # not found
 
     return @$r;
+}
+
+sub bsearch_db {
+    my $dbh = shift;
+    my $inputterm = shift;
+    my $sk = shift; # sortkey to search for
+    my $l = 1;      # lower end of search interval
+    my ($u) = $dbh->selectrow_array( 'SELECT seq FROM seq ORDER BY seq DESC LIMIT 1');   # upper end of search interval
+    my $i;          # index of probe
+
+    # TODO this hack is due to wiktstruct.pl outputting both page titles and sortkeys to a UTF-8 file
+    utf8::encode($sk);
+
+    while ($l <= $u) {
+        $i = int(($l + $u)/2);
+        my $hr = $dbh->selectrow_hashref(
+            'SELECT *, sortkey < ? AS lt, sortkey > ? AS gt FROM seq INNER JOIN title USING (page_id) WHERE seq = ?', undef, $sk, $sk, $i );
+        my $d = $hr->{lt} * -1 + $hr->{gt};
+
+        if ($d < 0) {
+            $l = $i+1;
+        } elsif ($d > 0) {
+            $u = $i-1;
+        }
+        else {
+            #print STDERR "** bsearch_db found the key which should be impossible!\n";
+            #dumpresults({i=>$i, l=>$l, u=>$u, hr=>$hr}, 'jsfm');
+            #print "\n";
+            #die;    # we only resort to using bsearch_db when we know the key can't be found
+            return ($i-1, $i+1);    # found
+        }
+    }
+
+    return ($l-1, $l);
 }
 
 ##########################################
@@ -340,6 +488,7 @@ sub dumpresults {
     }
 }
 
+# TODO "seq" param should be used here as in positive results right?
 sub dumperror {
     dumpresults( { error => { code => shift, info => shift} }, 'json', shift );
 
