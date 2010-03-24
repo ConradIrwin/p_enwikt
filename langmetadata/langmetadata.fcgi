@@ -1,4 +1,4 @@
-#!/usr/bin/perl -I/home/hippietrail/lib
+#!/usr/bin/perl -I/home/hippietrail/perl5/lib/perl5
 
 # output language metadata structure as JSON, optionally formatted
 
