@@ -160,9 +160,20 @@ unless ($json) {
     }
 }
 
-sub CHANNEL () { defined $opt_c ? $opt_c : defined $opt_d ? '#Wiktionarydev' : '#wiktionary' }
-sub BOTNICK () { defined $opt_n ? $opt_n : defined $opt_d ? 'hippiebot-d' : 'hippiebot' }
+# TODO support multiple channels per bot
+my %hippiebot = (
+    botnick => 'hippiebot',
+    channels => [ '#wiktionary', '#Wiktionarydev', '#hippiebot' ],
+);
+
+$hippiebot{botnick} = $opt_n if defined $opt_n;
+$hippiebot{channels} = [ $opt_c ] if defined $opt_c;
+
+# TODO should be per-channel when one bot can be on multiple channels
 my $feed_delay = defined $opt_d ? 10 : 60;
+
+use Data::Dumper;
+print Dumper \%hippiebot;
 
 my @feeds = (
     {   url   => 'http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml',
@@ -221,7 +232,7 @@ sub bot_start {
     $irc->yield( register => "all" );
 
     $irc->yield( connect =>
-          { Nick => BOTNICK,
+          { Nick     => $hippiebot{botnick},
             Username => 'hippiebot',
             Ircname  => 'POE::Component::IRC hippietrail bot',
             Server   => 'irc.freenode.net',
@@ -232,9 +243,11 @@ sub bot_start {
 
 #### on_ handlers ####
 
-# The bot has successfully connected to a server.  Join a channel.
+# The bot has successfully connected to a server.  Join all channels.
 sub on_connect {
-    $irc->yield( join => CHANNEL );
+    foreach my $ch (@{$hippiebot{channels}}) {
+        $irc->yield( join => $ch );
+    }
 }
 
 # The bot has received a public message.  Parse it for commands, and
@@ -253,7 +266,7 @@ sub on_public {
 
         my $resp = do_define($channel, 'know-it-all', $kiaterm);
 
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+        $resp && $irc->yield( privmsg => $channel, $resp );
     }
 
     elsif ( my ($dbterm) = $msg =~ /^\.\? (.+)$/) {
@@ -261,7 +274,7 @@ sub on_public {
 
         my $resp = do_define($channel, 'club_butler', $dbterm);
 
-        $resp && $irc->yield( privmsg => CHANNEL, $resp );
+        $resp && $irc->yield( privmsg => $channel, $resp );
     }
 
     #elsif ( $nick eq 'hippietrail' && $nickserv ) {
@@ -269,7 +282,7 @@ sub on_public {
 
     #    my $resp = do_hippietrail($msg);
 
-    #    $resp && $irc->yield( privmsg => CHANNEL, $resp );
+    #    $resp && $irc->yield( privmsg => $channel, $resp );
     #}
 
     elsif ( $nick eq 'know-it-all' && $channel ne '#wiktionary' ) {
@@ -295,7 +308,7 @@ sub on_public {
                 print STDERR "SUGGEST\t'$kia_queue[-1]'\t(", scalar @kia_queue, ")\n"; 
                 my $resp = do_suggest(shift @kia_queue);
 
-                $resp && $irc->yield( privmsg => CHANNEL, $resp );
+                $resp && $irc->yield( privmsg => $channel, $resp );
             }
         }
     }
@@ -328,7 +341,7 @@ sub on_public {
                 print STDERR "SUGGEST\t'$cb_queue[-1]'\t(", scalar @cb_queue, ")\n"; 
                 my $resp = do_suggest(shift @cb_queue);
 
-                $resp && $irc->yield( privmsg => CHANNEL, $resp );
+                $resp && $irc->yield( privmsg => $channel, $resp );
             }
         }
     }
@@ -338,7 +351,7 @@ sub on_public {
         my $resps = do_command($msg);
 
         foreach (@$resps) {
-            $irc->yield( privmsg => CHANNEL, $_ );
+            $irc->yield( privmsg => $channel, $_ );
         }
     }
 }
@@ -379,7 +392,7 @@ sub on_bot_addressed {
     $resps = do_command($msg);
 
     foreach (@$resps) {
-        $irc->yield( privmsg => CHANNEL, $nick . ': ' . $_ );
+        $irc->yield( privmsg => $channel, $nick . ': ' . $_ );
     }
 }
 
@@ -431,7 +444,7 @@ sub on_feeds {
 
             my $announce = 0;
 
-            # when starting up, the newist item, unless -F
+            # when starting up, the newest item, unless -F
             # after that, all *new* items
 
             if ($tick_num < scalar @feeds) {
@@ -442,7 +455,10 @@ sub on_feeds {
 
             $opt_d && !$opt_F && print STDERR 'tick: ', $tick_num, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
 
-            $announce && $irc->yield( privmsg => CHANNEL, $feed->{name} . ': ' . $t );
+            # TODO each channel should have its own feed delay when one bot can join multiple channels
+            foreach my $ch (@{$hippiebot{channels}}) {
+                $announce && $irc->yield( privmsg => $ch, $feed->{name} . ': ' . $t );
+            }
 
             $feed->{hash}->{$t} = 1;
         }
@@ -500,7 +516,7 @@ sub do_command {
         $resps->[0] = do_random($args);
     } elsif ( ($args) = $msg =~ /^toc\s+(.+)\s*$/ ) {
         $resps->[0] = do_toc($args);
-    } elsif ( ($force, $args) = $msg =~ /^gf(!)\s+(.+)\s*$/ ) {
+    } elsif ( ($force, $args) = $msg =~ /^gf(!)?\s+(.+)\s*$/ ) {
         $resps->[0] = do_gf(undef, $force, $args);
     } elsif ( ($args) = $msg =~ /^!suggest\s+(.+)\s*$/ ) {
         $resps->[0] = do_suggest($args);
