@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -I/home/hippietrail/perl5/lib/perl5 -I/home/hippietrail/lib
 
 # This was a simple IRC bot that knows about languages.
 # It originally responded to:
@@ -123,6 +123,10 @@ my $js = JSON->new;
 print STDERR '** using ', $js->backend, " back end\n";
 
 print STDERR "** LWP::Simple version: $LWP::Simple::VERSION\n";
+
+print STDERR "** POE version: $POE::VERSION\n";
+print STDERR "** POE::Component::IRC version: $POE::Component::IRC::VERSION\n";
+print STDERR "** POE::Component::IRC::Common version: $POE::Component::IRC::Common::VERSION\n";
 
 $js = $js->utf8 if $LWP::Simple::VERSION < 5.827;
 
@@ -892,8 +896,6 @@ sub do_define {
     my $ok = 0;
     my $resp = undef;
 
-    return undef if $channel eq '#wiktionary';
-
     my ($kia, $cb);
 
     $kia = scalar grep $_ eq 'know-it-all', $irc->channel_list($channel);
@@ -903,9 +905,11 @@ sub do_define {
     if ($channel) {
         if ($bot eq 'know-it-all') {
             if ($kia) {
-                push @kia_queue, $term;
-                $ok = 1;
-                print STDERR "KIA-DEFINE '$term' (", scalar @kia_queue, ")\n";
+                if ($channel ne '#wiktionary') {
+                    push @kia_queue, $term;
+                    $ok = 1;
+                    print STDERR "KIA-DEFINE '$term' (", scalar @kia_queue, ")\n";
+                }
             } elsif ($cb) {
                 $resp = 'try ".?" instead of "define"';
             } else {
@@ -913,9 +917,11 @@ sub do_define {
             }
         } elsif ($bot eq 'club_butler') {
             if ($cb) {
-                push @cb_queue, $term;
-                $ok = 1;
-                print STDERR "CB-DEFINE '$term' (", scalar @cb_queue, ")\n";
+                if ($channel ne '#wiktionary') {
+                    push @cb_queue, $term;
+                    $ok = 1;
+                    print STDERR "CB-DEFINE '$term' (", scalar @cb_queue, ")\n";
+                }
             } elsif ($kia) {
                 $resp = 'try "define" instead of ".?"';
             } else {
