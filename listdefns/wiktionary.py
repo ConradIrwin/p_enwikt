@@ -4,7 +4,11 @@ import xmlreader
 
 namespaces = set(['Media','Special','Talk','User','User talk','Wiktionary', 'Wiktionary talk', 'File', 'File talk', 'MediaWiki', 'MediaWiki talk', 'Template', 'Template talk', 'Help', 'Help talk', 'Category', 'Category talk', 'Appendix', 'Appendix talk', 'Concordance', 'Concordance talk', 'Index', 'Index talk', 'Rhymes', 'Rhymes talk', 'Transwiki', 'Transwiki talk', 'Wikisaurus', 'Wikisaurus talk', 'WT', 'WT talk', 'Citations', 'Citations talk'])
 
-posses = set(['noun', 'noun phrase', 'noun form', 'verb', 'verb form', 'verb phrase', 'transitive verb', 'intransitive verb', 'adjective', 'adjective form', 'adjective phrase', 'adverb', 'adverb phrase', 'pronoun', 'conjunction', 'contraction', 'interjection', 'preposition', 'proper noun', 'article', 'prefix', 'verb prefix', 'suffix', 'infix', 'interfix', 'circumfix', 'affix', 'idiom', 'phrase', 'acronym', 'abbreviation', 'initialism', 'symbol', 'letter', 'number', 'numeral', 'ordinal number', 'ordinal numeral', 'cardinal number', 'cardinal numeral', 'particle', 'proverb', 'han character', 'kanji', 'hanzi', 'hanja', 'pinyin', 'pinyin syllable', 'syllable', 'katakana character', 'hiragana letter', 'hiragana character', 'counter', 'classifier', 'adnominal', 'determiner', 'expression', 'postposition', 'root', 'participle', '{{initialism}}', '{{acronym}}', '{{abbreviation}}', 'cmavo', 'gismu'])
+posses = set(['noun', 'noun phrase', 'noun form', 'verb', 'verb form', 'verb phrase', 'transitive verb', 'intransitive verb', 'adjective', 'adjective form', 'adjective phrase', 'adverb', 'adverb phrase', 'pronoun', 'conjunction', 'contraction', 'interjection', 'preposition', 'proper noun', 'article', 'prefix', 'verb prefix', 'suffix', 'infix', 'interfix', 'circumfix', 'affix', 'idiom', 'phrase', 'acronym', 'abbreviation', 'initialism', 'symbol', 'letter', 'number', 'numeral', 'ordinal number', 'ordinal numeral', 'cardinal number', 'cardinal numeral', 'particle', 'proverb', 'han character', 'kanji', 'hanzi', 'hanja', 'pinyin', 'pinyin syllable', 'syllable', 'katakana character', 'hiragana letter', 'hiragana character', 'counter', 'classifier', 'adnominal', 'determiner', 'expression', 'postposition', 'root', 'participle', '{{initialism}}', '{{acronym}}', '{{abbreviation}}', 'cmavo', 'gismu', 'predicative', 'gerund', 'jyutping syllable', 'lujvo', 'nominal suffix', 'indefinite pronoun', 'measure word', 'kanji reading', 'hiragana', 'romaji', 'verbal noun', 'ligature', 'correlative', 'pronomial adverb'])
+
+for i in range(1,5):
+    posses.add('noun %s' % i)
+    posses.add('verb %s' % i)
 
 re_language = re.compile(r"^(==\s*(?:\[\[\s*)?([^[=\s].*[^=\s\]])(?:\s*\]\])?\s*==)$", re.M)
 
@@ -13,7 +17,7 @@ def is_part_of_speech(title):
     Is it on our part-of-speech whitelist
     """
     if title:
-        if title.lower() in posses or title.startswith('{{abbreviation') or title.startswith('{{initialism'):
+        if title.lower() in posses or title.startswith('{{abbreviation') or title.startswith('{{initialism') or title.startswith('{{acronym'):
             return True
 
 class Section(object):
@@ -100,8 +104,8 @@ def all_subsections(text):
     else:
         first = split.pop(0)
         split[0] = first + split[0]
-        for x in range(3,len(split),3):
-            yield Section(split[x-2], split[x-3] + split[x-1])
+        for x in range(1,len(split),3):
+            yield Section(split[x], split[x-1] + split[x+1])
 
 def all_headings(text, preserve_links=False):
     if preserve_links:
