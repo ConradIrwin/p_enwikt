@@ -11,10 +11,12 @@ use utf8; # needed due to literal unicode for stripping diacritics
 use File::HomeDir;
 use Getopt::Std;
 use HTML::Entities;
+use HTTP::Request::Common qw(GET);
 use JSON -support_by_pp;
 use LWP::Simple qw(get $ua);
-use LWP::UserAgent;
+#use LWP::UserAgent;                # seems to no longer be used
 use POE;
+use POE::Component::Client::HTTP;
 use POE::Component::IRC::Common qw(irc_to_utf8);
 use POE::Component::IRC::Plugin::BotAddressed;
 use POE::Component::IRC::State;
@@ -160,7 +162,6 @@ unless ($json) {
     }
 }
 
-# TODO support multiple channels per bot
 my %hippiebot = (
     botnick => 'hippiebot',
     channels => [ '#wiktionary', '#Wiktionarydev', '#hippiebot' ],
@@ -199,8 +200,14 @@ my @feeds = (
 my @kia_queue;
 my @cb_queue;
 
-# Create the component that will represent an IRC network.
-my ($irc) = POE::Component::IRC::State->spawn();
+# Create the IRC component
+my $irc = POE::Component::IRC::State->spawn();
+
+# Create the HTTP component for RSS/Atom feeds
+POE::Component::Client::HTTP->spawn(
+    Agent   => 'hippiebot',
+    Alias   => 'feed-http',
+    Timeout => 10);
 
 $irc->plugin_add( 'BotAddressed', POE::Component::IRC::Plugin::BotAddressed->new() );
 
@@ -217,6 +224,7 @@ POE::Session->create(
         irc_error         => \&on_error,
         irc_socketerr     => \&on_socketerr,
         feeds             => \&on_feeds,
+        feed_response     => \&on_feed_response,
     },
 );
 
@@ -396,14 +404,33 @@ sub on_bot_addressed {
     }
 }
 
+# Time to check the next RSS/Atom feed
 sub on_feeds {
     my $kernel = $_[KERNEL];
 
-    my $feed = $feeds[ $tick_num % scalar @feeds ];
+    my $feednum = $tick_num % scalar @feeds;
+    my $feed = $feeds[ $feednum ];
 
-    my $xml = get $feed->{url};
+    $kernel->post(
+        'feed-http', 'request',
+        'feed_response',
+        GET ($feed->{url}),
+        $feednum);
+}
 
-    if ($xml) {
+# handle an incoming RSS/Atom feed
+sub on_feed_response {
+    my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
+
+    my $feednum       = $request_packet->[1];
+    my $http_response = $response_packet->[0];
+
+    my $feed = $feeds[ $feednum ];
+
+    my $was_working = $feed->{working};
+    my $is_working = $feed->{working} = $http_response->is_success;
+
+    if ($is_working) {
         my $in = 0;
         my %title_atts;
         my $txt;
@@ -433,7 +460,7 @@ sub on_feeds {
             }
         );
 
-        $parser->parse($xml);
+        $parser->parse($http_response->decoded_content);
 
         for (my $i = 0; $i < scalar @titles; ++$i) {
             my $t = $titles[$i];
@@ -450,7 +477,7 @@ sub on_feeds {
             if ($tick_num < scalar @feeds) {
                 $announce = $i == 0 && !$opt_F;
             } else {
-                $announce = ! exists $feed->{hash}->{$t};
+                $announce = ! exists $feed->{seen}->{$t};
             }
 
             $opt_d && !$opt_F && print STDERR 'tick: ', $tick_num, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
@@ -460,11 +487,15 @@ sub on_feeds {
                 $announce && $irc->yield( privmsg => $ch, $feed->{name} . ': ' . $t );
             }
 
-            $feed->{hash}->{$t} = 1;
+            $feed->{seen}->{$t} = 1;
         }
+    }
 
-    } else {
-        print STDERR "didn't get feed '$feed->{name}' ($!)\n";
+    # unless we're just starting up report feeds which start or stop working
+    if ($tick_num >= scalar @feeds && $is_working != $was_working) {
+        my $msg = '** feed \'' . $feed->{name} . '\' is now ' . ($is_working ? 'working' : 'down');
+        print STDERR "$msg\n";
+        $irc->yield( privmsg => '#hippiebot', $msg );
     }
 
     $kernel->delay( feeds => $feed_delay );
