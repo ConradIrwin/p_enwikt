@@ -14,7 +14,7 @@ use HTML::Entities;
 use HTTP::Request::Common qw(GET);
 use JSON -support_by_pp;
 use LWP::Simple qw(get $ua);
-#use LWP::UserAgent;                # seems to no longer be used
+use LWP::UserAgent;                # used in do_random for HTTP head
 use POE;
 use POE::Component::Client::HTTP;
 use POE::Component::IRC::Common qw(irc_to_utf8);
@@ -38,9 +38,15 @@ getopts('c:dFn:');
 
 my $tick_num = 0;
 
-# set a useragent and timeout
+# set a useragent and timeout for LWP::Simple
 $ua->agent('hippiebot');
 $ua->timeout(60);
+
+my %googlefights;
+my $googlefight_id = 0;
+
+my %suggests;
+my $suggest_id = 0;
 
 # slurp dumped enwikt language code : name mappings
 open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
@@ -136,7 +142,6 @@ $js = $js->utf8 if $LWP::Simple::VERSION < 5.827;
 my %three2one;
 my %name2code;
 
-# TODO handle error
 my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&fields=iso3,isoname,n';
 
 unless ($json) {
@@ -173,9 +178,6 @@ $hippiebot{channels} = [ $opt_c ] if defined $opt_c;
 # TODO should be per-channel when one bot can be on multiple channels
 my $feed_delay = defined $opt_d ? 10 : 60;
 
-use Data::Dumper;
-print Dumper \%hippiebot;
-
 my @feeds = (
     {   url   => 'http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml',
         name  => 'official dumps',
@@ -206,7 +208,7 @@ my $irc = POE::Component::IRC::State->spawn();
 # Create the HTTP component for RSS/Atom feeds
 POE::Component::Client::HTTP->spawn(
     Agent   => 'hippiebot',
-    Alias   => 'feed-http',
+    Alias   => 'my-http',
     Timeout => 10);
 
 $irc->plugin_add( 'BotAddressed', POE::Component::IRC::Plugin::BotAddressed->new() );
@@ -223,8 +225,10 @@ POE::Session->create(
         irc_disconnected  => \&on_disconnected,
         irc_error         => \&on_error,
         irc_socketerr     => \&on_socketerr,
-        feeds             => \&on_feeds,
+        feed_timer        => \&on_feed_timer,
         feed_response     => \&on_feed_response,
+        gf_response       => \&on_gf_response,
+        sugg_response     => \&on_sugg_response,
     },
 );
 
@@ -234,7 +238,7 @@ sub bot_start {
     my $kernel = $_[KERNEL];
 
     # feed stuff
-    $kernel->delay( feeds => $feed_delay );
+    $kernel->delay( feed_timer => $feed_delay );
 
     # IRC stuff
     $irc->yield( register => "all" );
@@ -269,6 +273,7 @@ sub on_public {
 
     my $ts = scalar localtime;
 
+    # SYNCHRONOUS
     if ( my ($kiaterm) = $msg =~ /^define (.+)$/) {
         print "1 [$ts] <$nick:$channel> $msg\n";
 
@@ -277,6 +282,7 @@ sub on_public {
         $resp && $irc->yield( privmsg => $channel, $resp );
     }
 
+    # SYNCHRONOUS
     elsif ( my ($dbterm) = $msg =~ /^\.\? (.+)$/) {
         print "2 [$ts] <$nick:$channel> $msg\n";
 
@@ -293,6 +299,7 @@ sub on_public {
     #    $resp && $irc->yield( privmsg => $channel, $resp );
     #}
 
+    # ASYNCHRONOUS
     elsif ( $nick eq 'know-it-all' && $channel ne '#wiktionary' ) {
         my ($defineresp, $known);
 
@@ -310,17 +317,19 @@ sub on_public {
         }
 
         if ($defineresp) {
-            print "4 [$ts] <$nick:$channel> $msg\n";
+            #print "4 [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
                 print STDERR "SUGGEST\t'$kia_queue[-1]'\t(", scalar @kia_queue, ")\n"; 
-                my $resp = do_suggest(shift @kia_queue);
+                # ASYNCH
+                my $resp = do_suggest($kernel, $channel, undef, shift @kia_queue);
 
                 $resp && $irc->yield( privmsg => $channel, $resp );
             }
         }
     }
 
+    # ASYNCHRONOUS
     elsif ( $nick eq 'club_butler' && $channel ne '#wiktionary' ) {
         my ($defineresp, $known);
         my ($term, $pos);
@@ -343,20 +352,22 @@ sub on_public {
         }
 
         if ($defineresp) {
-            print "5 [$ts] <$nick:$channel> $msg\n";
+            #print "5 [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
                 print STDERR "SUGGEST\t'$cb_queue[-1]'\t(", scalar @cb_queue, ")\n"; 
-                my $resp = do_suggest(shift @cb_queue);
+                # ASYNCH
+                my $resp = do_suggest($kernel, $channel, undef, shift @cb_queue);
 
                 $resp && $irc->yield( privmsg => $channel, $resp );
             }
         }
     }
 
+    # SYNCHRONOUS & ASYNCHRONOUS
     else {
         print "PUBLIC [$ts] <$nick:$channel> $msg\n";
-        my $resps = do_command($msg);
+        my $resps = do_command($kernel, $channel, undef, $msg);
 
         foreach (@$resps) {
             $irc->yield( privmsg => $channel, $_ );
@@ -377,7 +388,7 @@ sub on_msg {
     my $ts = scalar localtime;
     print "MSG [$ts] <$nick:$channel> $msg\n";
 
-    $resps = do_command($msg);
+    $resps = do_command($kernel, undef, $nick, $msg);
 
     foreach (@$resps) {
         $irc->yield( privmsg => $nick, $_ );
@@ -397,7 +408,7 @@ sub on_bot_addressed {
     my $ts = scalar localtime;
     print "ADDRESS [$ts] <$nick:$channel> $msg\n";
 
-    $resps = do_command($msg);
+    $resps = do_command($kernel, $channel, $nick, $msg);
 
     foreach (@$resps) {
         $irc->yield( privmsg => $channel, $nick . ': ' . $_ );
@@ -405,14 +416,14 @@ sub on_bot_addressed {
 }
 
 # Time to check the next RSS/Atom feed
-sub on_feeds {
+sub on_feed_timer {
     my $kernel = $_[KERNEL];
 
     my $feednum = $tick_num % scalar @feeds;
     my $feed = $feeds[ $feednum ];
 
     $kernel->post(
-        'feed-http', 'request',
+        'my-http', 'request',
         'feed_response',
         GET ($feed->{url}),
         $feednum);
@@ -429,6 +440,15 @@ sub on_feed_response {
 
     my $was_working = $feed->{working};
     my $is_working = $feed->{working} = $http_response->is_success;
+
+    # unless we're just starting up report feeds which start or stop working
+    #if ($tick_num >= scalar @feeds) {
+        if ($is_working != $was_working) {
+            my $msg = '** feed \'' . $feed->{name} . '\' is now ' . ($is_working ? 'working' : 'down');
+            print STDERR "$msg\n";
+            $irc->yield( privmsg => '#hippiebot', $msg );
+        }
+    #}
 
     if ($is_working) {
         my $in = 0;
@@ -471,34 +491,31 @@ sub on_feed_response {
 
             my $announce = 0;
 
-            # when starting up, the newest item, unless -F
+            # at first successful feed check, the newest item, unless -F
             # after that, all *new* items
 
-            if ($tick_num < scalar @feeds) {
-                $announce = $i == 0 && !$opt_F;
-            } else {
+            if (exists $feed->{initial_check_done}) {
+$i == 0 && print STDERR $feed->{name}, " has been checked before\n";
                 $announce = ! exists $feed->{seen}->{$t};
+            } else {
+$i == 0 && print STDERR $feed->{name}, " initial feed check\n";
+                $announce = $i == 0 && !$opt_F;
             }
+print STDERR 'announce: ', $announce, ' ', $feed->{name}, '[', $i, "]\n";
 
             $opt_d && !$opt_F && print STDERR 'tick: ', $tick_num, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
 
-            # TODO each channel should have its own feed delay when one bot can join multiple channels
+            # TODO should each channel should have its own feed delay when one bot can join multiple channels
             foreach my $ch (@{$hippiebot{channels}}) {
                 $announce && $irc->yield( privmsg => $ch, $feed->{name} . ': ' . $t );
             }
 
             $feed->{seen}->{$t} = 1;
         }
+        $feed->{initial_check_done} = 1;
     }
 
-    # unless we're just starting up report feeds which start or stop working
-    if ($tick_num >= scalar @feeds && $is_working != $was_working) {
-        my $msg = '** feed \'' . $feed->{name} . '\' is now ' . ($is_working ? 'working' : 'down');
-        print STDERR "$msg\n";
-        $irc->yield( privmsg => '#hippiebot', $msg );
-    }
-
-    $kernel->delay( feeds => $feed_delay );
+    $kernel->delay( feed_timer => $feed_delay );
     ++ $tick_num;
 }
 
@@ -532,30 +549,44 @@ sub on_socketerr {
 #### do_ implementations ####
 
 sub do_command {
-    my $msg = shift;
+    my ( $kernel, $channel, $nick, $msg ) = @_;
     my $force;
     my $args;
-    my $resps;
+    my $resps = [];
 
+    # synchronous commands which can return multiple lines
     if ( ($args) = $msg =~ /^lang (.+)/ ) {
+        # TODO ASYNCH ?
         $resps = do_lang($args);
     }
 
+    # synchronous commands which return one line
     elsif ( $msg =~ /^dumps$/ ) {
+        # TODO ASYNCH ??
         $resps->[0] = do_dumps();
     } elsif ( ($args) = $msg =~ /^random\s+(.+)\s*$/ ) {
+        # TODO ASYNCH ?
         $resps->[0] = do_random($args);
     } elsif ( ($args) = $msg =~ /^toc\s+(.+)\s*$/ ) {
+        # TODO ASYNCH ?
         $resps->[0] = do_toc($args);
-    } elsif ( ($force, $args) = $msg =~ /^gf(!)?\s+(.+)\s*$/ ) {
-        $resps->[0] = do_gf(undef, $force, $args);
+    }
+
+    # asynchronous commands
+    elsif ( ($force, $args) = $msg =~ /^gf(!)?\s+(.+)\s*$/ ) {
+        # ASYNCH
+        my $resp = do_gf($kernel, $channel, $nick, $force, $args);
+        $resps->[0] = $resp if defined $resp;
     } elsif ( ($args) = $msg =~ /^!suggest\s+(.+)\s*$/ ) {
-        $resps->[0] = do_suggest($args);
+        # TODO ASYNCH
+        my $resp = do_suggest($kernel, $channel, $nick, $args);
+        $resps->[0] = $resp if defined $resp;
     }
 
     return $resps;
 }
 
+# TOO ASYNCHRONOUS ?
 sub do_lang {
     my $input = shift;
     my $codes = $input;
@@ -570,6 +601,7 @@ sub do_lang {
         $codes .= ',' . join(',', @{$name2code{$nname}});
     }
 
+    # TODO asynch?
     my $metadata;
     my $json = get $newuri . $codes;
 
@@ -596,6 +628,7 @@ sub do_lang {
             my $uri = $endpoint . uri_escape($query);
             my @dbp;
 
+            # TODO asynch?
             if (my $json = get $uri) {
                 if ($json) {
                     my $data = $js->decode($json);
@@ -775,6 +808,7 @@ sub metadata_to_english {
     return $resp;
 }
 
+# TODO ASYNCHRONOUS ??
 sub do_dumps {
     my $ok = 0;
     my $resp = 'I don\'t know anything about the dumps right now.';
@@ -791,6 +825,7 @@ sub do_dumps {
     return $resp;
 }
 
+# TODO ASYNCHRONOUS ?
 sub do_random {
     my $lang = shift;
     my $ok = 0;
@@ -852,6 +887,7 @@ sub do_random {
     return $resp;
 }
 
+# TODO ASYNCHRONOUS ?
 sub do_toc {
     my $page = shift;
     my $ok = 0;
@@ -859,6 +895,7 @@ sub do_toc {
 
     my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=sections&page=';
 
+    # TODO use POE::Component::Client::HTTP
     my $data;
     my $json = get $uri . $page;
 
@@ -886,8 +923,11 @@ sub do_toc {
     return $resp;
 }
 
+# ASYNCHRONOUS
 sub do_gf {
+    my $kernel = shift;
     my $channel = shift;
+    my $nick = shift;
     my $force = shift;
     my $args= shift;
     my $ok = 0;
@@ -906,32 +946,74 @@ sub do_gf {
     }
 
     if ($ok) {
-        my %searches;
+        my %terms;
 
-        $searches{$_} = undef for ($args =~ /(".*?"|\S+)/g);
+        $terms{$_} = undef for ($args =~ /(".*?"|\S+)/g);
 
-        foreach my $term (keys %searches) {
+        $googlefights{$googlefight_id} = {
+            channel => $channel,
+            nick => $nick,
+            numterms => scalar keys %terms,
+        };
+
+        foreach my $term (keys %terms) {
             $term =~ s/  +/+/g;
 
-            my $html = get 'http://www.google.com.au/search?q=' . $term;
-
-            if ($html =~ /Results <b>1<\/b> - <b>\d+<\/b> of about <b>([0-9,]+)<\/b> for <b>/) {
-                $searches{$term} = [$1, $1];
-                $searches{$term}->[1] =~ s/,//g;
-            }
+            $kernel->post(
+                'my-http', 'request',
+                'gf_response',
+                GET ('http://www.google.com.au/search?q=' . $term),
+                $googlefight_id . '.' . $term);
         }
-        $resp = 'Googlefight: ' . join(
-            ', ',
-            map {
-                ($_ =~ /^".*"$/ ? $_ : '\'' . $_ . '\'') . ': ' . $searches{$_}->[0]
-            } sort {
-                $searches{$b}->[1] <=> $searches{$a}->[1]
-            } keys %searches);
+
+        ++ $googlefight_id;
     }
 
     hippbotlog('gf', '', $ok);
 
-    return $resp;
+    return undef;
+}
+
+# handle an incoming googlefight response
+sub on_gf_response {
+    my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
+
+    my $gf_req_id     = $request_packet->[1];
+    my $http_response = $response_packet->[0];
+
+    $gf_req_id =~ /^(\d+)\.(.*)$/;
+    my ($gf_id, $term) = ($1, $2);
+    my $fight = $googlefights{$gf_id};
+
+    # parse html
+    if ($http_response->decoded_content =~ /Results <b>1<\/b> - <b>\d+<\/b> of about <b>([0-9,]+)<\/b> for <b>/) {
+        $fight->{terms}->{$term} = [$1, $1];
+        $fight->{terms}->{$term}->[1] =~ s/,//g;
+    } else {
+        $fight->{terms}->{$term} = [0, 0];
+    }
+
+    -- $fight->{numterms};
+
+    if ($fight->{numterms} == 0) {
+        my $resp = 'Googlefight: ' . join(
+            ', ',
+            map {
+                ($_ =~ /^".*"$/ ? $_ : '\'' . $_ . '\'') . ': ' . $fight->{terms}->{$_}->[0]
+            } sort {
+                $fight->{terms}->{$b}->[1] <=> $fight->{terms}->{$a}->[1]
+            } keys %{$fight->{terms}});
+
+        if (defined $fight->{channel} && defined $fight->{nick}) {
+            $irc->yield( privmsg => $fight->{channel}, $fight->{nick} . ': ' . $resp );
+        } elsif (defined $fight->{channel}) {
+            $irc->yield( privmsg => $fight->{channel}, $resp );
+        } elsif (defined $fight->{nick}) {
+            $irc->yield( privmsg => $fight->{nick}, $resp );
+        } else {
+            print STDERR "** gf no channel or nick impossible!\n";
+        }
+    }
 }
 
 # handle know-it-all define and club_butler .?
@@ -982,17 +1064,12 @@ sub do_define {
     return $resp;
 }
 
+# ASYNCHRONOUS
 sub do_suggest {
+    my $kernel = shift;
+    my $channel = shift;
+    my $nick = shift;
     my $term = shift;
-    my $resp = undef;
-
-    my %dym;        # stores weighted suggestions
-    my $sugg = '';  # the compiled and ordered and coloured and trimmed suggestion text
-
-    my $html;       # used for getting and scraping web pages
-    my @a;          # used for results of scraping web pages
-    my $json;       # used for getting and parsing JSON
-    my $res;        # used for results of parsing JSON
 
     ## which scripts are used in this term
 
@@ -1067,143 +1144,210 @@ sub do_suggest {
     # we no longer need the UTF-8 term so encode it for use in URLs
     $term = uri_escape_utf8($term);
 
+    my $suggq = $suggests{$suggest_id} = {
+        channel => $channel,
+        nick => $nick,
+        allreqs => 0,
+    };
+
+    my $url;
+
     # decide which sites to scrape or call based on language code
     for my $lc (keys %codes) {
 
         # Google does many languages and uses language codes
 
-        print STDERR "g-$lc\n";
-        $html = get 'http://www.google.com.au/search?hl=' . $lc . '&q=' . $term;
+        $url = 'http://www.google.com.au/search?hl=' . $lc . '&q=' . $term;
 
-        if ($html =~ /class="?spell"?><b><i>(.*?)<\/i><\/b><\/a>/) {
-            my $t = decode_entities($1);
-            print STDERR "\t$t\n";
-            ++ $dym{$t};
-        }
+        $kernel->post(
+            'my-http', 'request',
+            'sugg_response',
+            GET ($url),
+            $suggest_id . '.' . 'g' . '-' . $lc . '-' . $term);
+
+        ++ $suggq->{numresps};
 
         # English-only sites
-
+        # merriam-webster.com
         if ($lc eq 'en') {
-            print STDERR "mw-$lc\n";
-            $html = get 'http://www.merriam-webster.com/dictionary/' . $term;
+            $url = 'http://www.merriam-webster.com/dictionary/' . $term;
 
-            if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
-                if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
-                    for (@a) {
-                        print STDERR "\t$_\n";
-                        $dym{$_} += 0.5;
-                    }
-                }
-            }
+            $kernel->post(
+                'my-http', 'request',
+                'sugg_response',
+                GET ($url),
+                $suggest_id . '.' . 'mw' . '-' . $lc . '-' . $term);
 
-            # Encarta no longer gives spelling suggestions but does still have previous/next info
-            #print STDERR "enc-$lc\n";
-            #$html = get 'http://encarta.msn.com/dictionary_/' . $term . '.html';
-            #
-            #if (@a = $html =~ /<tr><td class="NoResultsSuggestions"><a href=".*?">(.*?)<\/a><\/td><\/tr>/g) {
-            #    for (@a) {
-            #        print STDERR "\t$_\n";
-            #        ++ $dym{$_};
-            #    }
-            #}
+            ++ $suggq->{numresps};
         }
 
         # Spanish-only sites
-
+        # merriam-webster.com
         if ($lc eq 'es') {
-            print STDERR "mw-$lc\n";
-            $html = get 'http://www.merriam-webster.com/spanish/' . $term;
+            $url = 'http://www.merriam-webster.com/spanish/' . $term;
 
-            if ($html =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
-                if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
-                    for (@a) {
-                        print STDERR "\t$_\n";
-                        $dym{$_} += 0.5;
-                    }
-                }
-            }
+            $kernel->post(
+                'my-http', 'request',
+                'sugg_response',
+                GET ($url),
+                $suggest_id . '.' . 'mw' . '-' . $lc . '-' . $term);
+
+            ++ $suggq->{numresps};
         }
 
         # Wiktionaries and Wikipedias
         for my $site (('wiktionary', 'wikipedia')) {
-            print STDERR "$site-$lc\n";
-            $json = get 'http://' . $lc . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
+            $url = 'http://' . $lc . '.' . $site . '.org/w/api.php?format=json&action=query&list=search&srinfo=suggestion&srprop=&srlimit=1&srsearch='. $term;
 
-            if ($json) {
-                $res = $js->decode($json);
-                if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
-                    print STDERR "\t$res->{query}->{searchinfo}->{suggestion}\n";
-                    ++ $dym{$res->{query}->{searchinfo}->{suggestion}};
-                }
-            }
+            $kernel->post(
+                'my-http', 'request',
+                'sugg_response',
+                GET ($url),
+                $suggest_id . '.' . $site . '-' . $lc . '-' . $term);
+
+            ++ $suggq->{numresps};
         }
     }
 
     # get previous and next terms across all language names
-    print STDERR "near-*\n";
-    $json = get 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=*&term=' . $term;
+    $url = 'http://toolserver.org/~hippietrail/nearbypages.fcgi?langname=*&term=' . $term;
 
-    if ($json) {
-        $res = $js->decode($json);
+    $kernel->post(
+        'my-http', 'request',
+        'sugg_response',
+        GET ($url),
+        $suggest_id . '.' . 'nearby' . '-' . '*' . '-' . $term);
 
-        if (exists $res->{prev}) {
-            print "\t$res->{prev}->[0]\n";
-            $dym{$res->{prev}->[0]} += 0.5;
+    ++ $suggq->{numresps};
+
+    $suggq->{allreqs} = 1;
+    ++ $suggest_id;
+
+    return undef;
+}
+
+# handle an incoming suggest response
+sub on_sugg_response {
+    my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
+
+    my $sugg_req_id     = $request_packet->[1];
+    my $http_response = $response_packet->[0];
+
+    $sugg_req_id =~ /^(\d+)\.(.*)-(.*)-(.*)$/;
+    my ($sugg_id, $site, $lang, $term) = ($1, $2, $3, $4);
+    my $fight = $suggests{$sugg_id};
+
+    # PARSE $http_response->decoded_content
+    my @a;
+
+    if ($site eq 'g') {
+        if ($http_response->decoded_content =~ /class="?spell"?><b><i>(.*?)<\/i><\/b><\/a>/) {
+            my $t = decode_entities($1);
+            ++ $fight->{dym}->{$t};
         }
-        if (exists $res->{next}) {
-            print "\t$res->{next}->[0]\n";
-            $dym{$res->{next}->[0]} += 0.5;
+    } elsif ($site eq 'mw') {
+        if ($http_response->decoded_content =~ /class="franklin-spelling-help">((?: \t<li><a href=".*?">.*?<\/a><\/li>)+) <\/ol>/) {
+            if (@a = $1 =~ / \t<li><a href=".*?">(.*?)<\/a><\/li>/g) {
+                for (@a) {
+                    $fight->{dym}->{$_} += 0.5;
+                }
+            }
+        }
+    } elsif ($site eq 'wiktionary' or $site eq 'wikipedia') {
+        $json = $http_response->decoded_content;
+
+        if ($http_response->is_success) {
+            if ($json) {
+                my $res = $js->decode($json);
+                if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
+                    ++ $fight->{dym}->{$res->{query}->{searchinfo}->{suggestion}};
+                }
+            }
+        }
+    } elsif ($site eq 'nearby') {
+        if ($http_response->is_success) {
+
+            # decodes gzip data etc and return result with character semantics
+            $json = $http_response->decoded_content;
+
+            if ($json) {
+                # the logic of utf8() is reversed for decode() but correct for encode()!!
+                my $confusing = ! utf8::is_utf8($json);
+                my $res = $js->utf8($confusing)->decode($json);  # works with charset => 'UTF-8' above
+
+                if (exists $res->{prev}) {
+                    $fight->{dym}->{$res->{prev}->[0]} += 0.5;
+                }
+                if (exists $res->{next}) {
+                    $fight->{dym}->{$res->{next}->[0]} += 0.5;
+                }
+            }
+        } else {
+            print STDERR "** toolserver nearbypages.fcgi timeout\n";
         }
     }
 
-    # now check which of these are blue links on enwikt
-    if (%dym) {
-        print STDERR "bluelink-check\n";
-        $json = get 'http://en.wiktionary.org/w/api.php?format=json&action=query&titles=' . join('|', keys %dym);
+    -- $fight->{numresps};
 
-        my %col;
+    if ($fight->{allreqs} && $fight->{numresps} == 0) {
 
-        if ($json) {
-            $res = $js->decode($json);
+        # build overall response from all part responses
+        my $resp = undef;
+        my $sugg = '';
 
-            if (exists $res->{query} && exists $res->{query}->{pages}) {
-                for my $d (values %{$res->{query}->{pages}}) {
-                    my $t = $d->{title};
-                    print "\t$t\n";
-                    if (exists $d->{missing}) {
-                        $col{$t} = '04';     # IRC red 04 ANSI 31
-                    } else {
-                        $dym{$t} += 2;
-                        $col{$t} = '02';     # IRC blue 02 ANSI 34
+        if (exists $fight->{dym}) {
+            $json = get 'http://en.wiktionary.org/w/api.php?format=json&action=query&titles=' . join('|', keys %{$fight->{dym}});
+
+            my %col;
+
+            if ($json) {
+                my $res = $js->decode($json);
+
+                if (exists $res->{query} && exists $res->{query}->{pages}) {
+                    for my $d (values %{$res->{query}->{pages}}) {
+                        my $t = $d->{title};
+                        if (exists $d->{missing}) {
+                            $col{$t} = '04';     # IRC red 04 ANSI 31
+                        } else {
+                            $fight->{dym}->{$t} += 2;
+                            $col{$t} = '02';     # IRC blue 02 ANSI 34
+                        }
                     }
+                }
+            }
+
+            # #let's see how they rated
+            for my $t (sort {$fight->{dym}->{$b} <=> $fight->{dym}->{$a}} keys %{$fight->{dym}}) {
+                if (length $sugg < 64) {
+                    $sugg .= ", " if $sugg ne '';
+                    $sugg .= "\003$col{$t}$t\00301";    # IRC black 01 ANSI 30
                 }
             }
         }
 
-        # let's see how they rated
-        for my $t (sort {$dym{$b} <=> $dym{$a}} keys %dym) {
-            print STDERR "$dym{$t} -> '$t' ($col{$t})\n";
-            if (length $sugg < 64) {
-                $sugg .= ", " if $sugg ne '';
-                $sugg .= "\003$col{$t}$t\00301";    # IRC black 01 ANSI 30
-            }
+        if ($sugg) {
+            $resp = 'did you mean ' . $sugg . ' ?';
+            # IRC -> ANSI colour conversion
+            $sugg =~ s/\00301/\e[0m/g; # IRC black / ANSI white
+            $sugg =~ s/\00302/\e[34m/g; # red
+            $sugg =~ s/\00304/\e[31m/g; # blue
+        } else {
+            $resp = 'I have little to suggest for "' . $term . '".';
+        }
+
+        if (defined $fight->{channel} && defined $fight->{nick}) {
+            $irc->yield( privmsg => $fight->{channel}, $fight->{nick} . ': ' . $resp );
+        } elsif (defined $fight->{channel}) {
+            $irc->yield( privmsg => $fight->{channel}, $resp );
+        } elsif (defined $fight->{nick}) {
+            $irc->yield( privmsg => $fight->{nick}, $resp );
+        } else {
+            print STDERR "** sugg no channel or nick impossible!\n";
         }
     }
-
-    if ($sugg) {
-        $resp = 'did you mean ' . $sugg . ' ?';
-        # IRC -> ANSI colour conversion
-        $sugg =~ s/\00301/\e[0m/g; # IRC black / ANSI white
-        $sugg =~ s/\00302/\e[34m/g; # red
-        $sugg =~ s/\00304/\e[31m/g; # blue
-        print STDERR "SUGG\t$sugg\n";
-    } else {
-        $resp = 'I have little to suggest.';
-    }
-
-    return $resp;
 }
 
+# SYNCHRONOUS
 sub do_hippietrail {
     my $msg = shift;
     my $resp = undef;
