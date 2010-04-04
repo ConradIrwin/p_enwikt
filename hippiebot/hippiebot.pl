@@ -606,7 +606,8 @@ sub do_lang {
     my $json = get $newuri . $codes;
 
     if ($json) {
-        $metadata = $js->decode($json);
+        # utf8(1) here prevents the native name from becoming mojibake (ENWIKT-27)
+        $metadata = $js->utf8(1)->decode($json);
     } else {
         print STDERR "couldn't get data on language codes ($codes) from langmetadata sever\n";
     }
