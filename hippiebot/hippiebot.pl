@@ -36,29 +36,46 @@ our($opt_c, $opt_d, $opt_F, $opt_n);
 
 getopts('c:dFn:');
 
-my $tick_num = 0;
+# XXX move to %g_hippiebot or heap?
+my $g_tick_num = 0;
 
 # set a useragent and timeout for LWP::Simple
 $ua->agent('hippiebot');
 $ua->timeout(60);
 
-my %googlefights;
-my $googlefight_id = 0;
+# TODO move to session heap
+my %g_googlefights;
+my $g_googlefight_id = 0;
 
-my %suggests;
-my $suggest_id = 0;
+# TODO move to session heap
+my %g_suggests;
+my $g_suggest_id = 0;
 
 # slurp dumped enwikt language code : name mappings
-open(IN, '<:encoding(utf8)', 'enwiktlangs.txt') or die "$!"; # Input as UTF-8
-my $enwikt = do { local $/; <IN> }; # Read file contents into scalar
-close(IN);
+my %g_enwikt;
+{
+    if (open(IN, '<:encoding(utf8)', 'enwiktlangs.txt')) {   # Input as UTF-8
+        my $enwikt = do { local $/; <IN> }; # Read file contents into scalar
+        close(IN);
 
-my %enwikt;
-eval '%enwikt = (' . $enwikt . ');';
+        eval '%g_enwikt = (' . $enwikt . ');';
+    } else { print STDERR "** couldn't read enwiktlangs.txt\n"; }
+}
+
+# slurp dumped enwiki language code : name mappings
+my %g_enwiki;
+{
+    if (open(IN, '<:encoding(utf8)', 'enwikilangs.txt')) {   # Input as UTF-8
+        my $enwiki = do { local $/; <IN> }; # Read file contents into scalar
+        close(IN);
+
+        eval '%g_enwiki = (' . $enwiki . ');';
+    } else { print STDERR "** couldn't read enwikilangs.txt\n"; }
+}
 
 # XXX this is a full list of ISO 639-3 macrolanguages which map to language families
 # XXX plus some language family codes from ISO 639-5
-my %fam = (
+my %g_fam = (
     afa => 'Afro-Asiatic',
     alg => 'Algonquian',
     apa => 'Apache',
@@ -126,9 +143,9 @@ my %fam = (
     znd => 'Zande',
 );
 
-my $js = JSON->new;
+my $g_js = JSON->new;
 
-print STDERR '** using ', $js->backend, " back end\n";
+print STDERR '** using ', $g_js->backend, " back end\n";
 
 print STDERR "** LWP::Simple version: $LWP::Simple::VERSION\n";
 
@@ -136,49 +153,51 @@ print STDERR "** POE version: $POE::VERSION\n";
 print STDERR "** POE::Component::IRC version: $POE::Component::IRC::VERSION\n";
 print STDERR "** POE::Component::IRC::Common version: $POE::Component::IRC::Common::VERSION\n";
 
-$js = $js->utf8 if $LWP::Simple::VERSION < 5.827;
+$g_js = $g_js->utf8 if $LWP::Simple::VERSION < 5.827;
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
-my %three2one;
-my %name2code;
+my %g_three2one;
+my %g_name2code;
+{
+    my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&fields=iso3,isoname,n';
 
-my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&fields=iso3,isoname,n';
+    unless ($json) {
+        print STDERR "** couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
+    } else {
+        my $data = $g_js->decode($json);
 
-unless ($json) {
-    print STDERR "couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
-} else {
-    my $data = $js->decode($json);
-
-    while (my ($k, $v) = each %$data) {
-        $three2one{$v->{iso3}} = $k if (exists $v->{iso3});
-        my @a;
-        if (ref($v->{n}) eq 'ARRAY') {
-            push @a, @{$v->{n}};
-        } elsif (exists $v->{n}) {
-            push @a, $v->{n};
-        }
-        push @a, $v->{isoname} if (exists $v->{isoname});
-        foreach (@a) {
-            my $n = normalize_lang_name($_);
-            if (!exists $name2code{$n} || !grep ($n eq $k, @{$name2code{$n}})) {
-                push @{$name2code{$n}}, $k;
+        while (my ($k, $v) = each %$data) {
+            $g_three2one{$v->{iso3}} = $k if (exists $v->{iso3});
+            my @a;
+            if (ref($v->{n}) eq 'ARRAY') {
+                push @a, @{$v->{n}};
+            } elsif (exists $v->{n}) {
+                push @a, $v->{n};
+            }
+            push @a, $v->{isoname} if (exists $v->{isoname});
+            foreach (@a) {
+                my $n = normalize_lang_name($_);
+                if (!exists $g_name2code{$n} || !grep ($n eq $k, @{$g_name2code{$n}})) {
+                    push @{$g_name2code{$n}}, $k;
+                }
             }
         }
     }
 }
 
-my %hippiebot = (
+# part configuration, part main bot object
+my %g_hippiebot = (
     botnick => 'hippiebot',
     channels => [ '#wiktionary', '#Wiktionarydev', '#hippiebot' ],
 );
 
-$hippiebot{botnick} = $opt_n if defined $opt_n;
-$hippiebot{channels} = [ $opt_c ] if defined $opt_c;
+$g_hippiebot{botnick} = $opt_n if defined $opt_n;
+$g_hippiebot{channels} = [ $opt_c ] if defined $opt_c;
 
 # TODO should be per-channel when one bot can be on multiple channels
-my $feed_delay = defined $opt_d ? 10 : 60;
+my $g_feed_delay = defined $opt_d ? 10 : 60;
 
-my @feeds = (
+my @g_feeds = (
     {   url   => 'http://download.wikipedia.org/enwiktionary/latest/enwiktionary-latest-pages-articles.xml.bz2-rss.xml',
         name  => 'official dumps',
     },
@@ -199,11 +218,12 @@ my @feeds = (
     },
 );
 
-my @kia_queue;
-my @cb_queue;
+# XXX move to %g_hippiebot or heap?
+my @g_kia_queue;
+my @g_cb_queue;
 
 # Create the IRC component
-my $irc = POE::Component::IRC::State->spawn();
+my $g_irc = POE::Component::IRC::State->spawn();
 
 # Create the HTTP component for RSS/Atom feeds
 POE::Component::Client::HTTP->spawn(
@@ -211,7 +231,7 @@ POE::Component::Client::HTTP->spawn(
     Alias   => 'my-http',
     Timeout => 10);
 
-$irc->plugin_add( 'BotAddressed', POE::Component::IRC::Plugin::BotAddressed->new() );
+$g_irc->plugin_add( 'BotAddressed', POE::Component::IRC::Plugin::BotAddressed->new() );
 
 # Create the bot session.  The new() call specifies the events the bot
 # knows about and the functions that will handle those events.
@@ -238,13 +258,13 @@ sub bot_start {
     my $kernel = $_[KERNEL];
 
     # feed stuff
-    $kernel->delay( feed_timer => $feed_delay );
+    $kernel->delay( feed_timer => $g_feed_delay );
 
     # IRC stuff
-    $irc->yield( register => "all" );
+    $g_irc->yield( register => "all" );
 
-    $irc->yield( connect =>
-          { Nick     => $hippiebot{botnick},
+    $g_irc->yield( connect =>
+          { Nick     => $g_hippiebot{botnick},
             Username => 'hippiebot',
             Ircname  => 'POE::Component::IRC hippietrail bot',
             Server   => 'irc.freenode.net',
@@ -257,8 +277,8 @@ sub bot_start {
 
 # The bot has successfully connected to a server.  Join all channels.
 sub on_connect {
-    foreach my $ch (@{$hippiebot{channels}}) {
-        $irc->yield( join => $ch );
+    foreach my $ch (@{$g_hippiebot{channels}}) {
+        $g_irc->yield( join => $ch );
     }
 }
 
@@ -279,7 +299,7 @@ sub on_public {
 
         my $resp = do_define($channel, 'know-it-all', $kiaterm);
 
-        $resp && $irc->yield( privmsg => $channel, $resp );
+        $resp && $g_irc->yield( privmsg => $channel, $resp );
     }
 
     # SYNCHRONOUS
@@ -288,7 +308,7 @@ sub on_public {
 
         my $resp = do_define($channel, 'club_butler', $dbterm);
 
-        $resp && $irc->yield( privmsg => $channel, $resp );
+        $resp && $g_irc->yield( privmsg => $channel, $resp );
     }
 
     #elsif ( $nick eq 'hippietrail' && $nickserv ) {
@@ -296,7 +316,7 @@ sub on_public {
 
     #    my $resp = do_hippietrail($msg);
 
-    #    $resp && $irc->yield( privmsg => $channel, $resp );
+    #    $resp && $g_irc->yield( privmsg => $channel, $resp );
     #}
 
     # ASYNCHRONOUS
@@ -310,8 +330,8 @@ sub on_public {
 
         # long definitions are cut short so don't check for the final full stop
         } elsif ( $msg =~ /^'.*' is .*: / ) {
-            shift @kia_queue;
-            print STDERR "KIA-DEF\t$msg\t(", scalar @kia_queue, ")\n";
+            shift @g_kia_queue;
+            print STDERR "KIA-DEF\t$msg\t(", scalar @g_kia_queue, ")\n";
             $defineresp = 1;
             $known = 1;
         }
@@ -320,11 +340,11 @@ sub on_public {
             #print "4 [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
-                print STDERR "SUGGEST\t'$kia_queue[-1]'\t(", scalar @kia_queue, ")\n"; 
+                print STDERR "SUGGEST\t'$g_kia_queue[-1]'\t(", scalar @g_kia_queue, ")\n"; 
                 # ASYNCH
-                my $resp = do_suggest($kernel, $channel, undef, shift @kia_queue);
+                my $resp = do_suggest($kernel, $channel, undef, shift @g_kia_queue);
 
-                $resp && $irc->yield( privmsg => $channel, $resp );
+                $resp && $g_irc->yield( privmsg => $channel, $resp );
             }
         }
     }
@@ -345,8 +365,8 @@ sub on_public {
             $known = 0;
 
         } elsif ( ($term, $pos) = $msg =~ /^(.*?) — (.*?): \d+\. / ) {
-            shift @cb_queue;
-            print STDERR "CB-DEF\t$term:$pos\t(", scalar @cb_queue, ")\n";
+            shift @g_cb_queue;
+            print STDERR "CB-DEF\t$term:$pos\t(", scalar @g_cb_queue, ")\n";
             $defineresp = 1;
             $known = 1;
         }
@@ -355,11 +375,11 @@ sub on_public {
             #print "5 [$ts] <$nick:$channel> $msg\n";
 
             unless ($known) {
-                print STDERR "SUGGEST\t'$cb_queue[-1]'\t(", scalar @cb_queue, ")\n"; 
+                print STDERR "SUGGEST\t'$g_cb_queue[-1]'\t(", scalar @g_cb_queue, ")\n"; 
                 # ASYNCH
-                my $resp = do_suggest($kernel, $channel, undef, shift @cb_queue);
+                my $resp = do_suggest($kernel, $channel, undef, shift @g_cb_queue);
 
-                $resp && $irc->yield( privmsg => $channel, $resp );
+                $resp && $g_irc->yield( privmsg => $channel, $resp );
             }
         }
     }
@@ -370,7 +390,7 @@ sub on_public {
         my $resps = do_command($kernel, $channel, undef, $msg);
 
         foreach (@$resps) {
-            $irc->yield( privmsg => $channel, $_ );
+            $g_irc->yield( privmsg => $channel, $_ );
         }
     }
 }
@@ -391,7 +411,7 @@ sub on_msg {
     $resps = do_command($kernel, undef, $nick, $msg);
 
     foreach (@$resps) {
-        $irc->yield( privmsg => $nick, $_ );
+        $g_irc->yield( privmsg => $nick, $_ );
     }
 }
 
@@ -411,7 +431,7 @@ sub on_bot_addressed {
     $resps = do_command($kernel, $channel, $nick, $msg);
 
     foreach (@$resps) {
-        $irc->yield( privmsg => $channel, $nick . ': ' . $_ );
+        $g_irc->yield( privmsg => $channel, $nick . ': ' . $_ );
     }
 }
 
@@ -419,8 +439,8 @@ sub on_bot_addressed {
 sub on_feed_timer {
     my $kernel = $_[KERNEL];
 
-    my $feednum = $tick_num % scalar @feeds;
-    my $feed = $feeds[ $feednum ];
+    my $feednum = $g_tick_num % scalar @g_feeds;
+    my $feed = $g_feeds[ $feednum ];
 
     $kernel->post(
         'my-http', 'request',
@@ -431,24 +451,27 @@ sub on_feed_timer {
 
 # handle an incoming RSS/Atom feed
 sub on_feed_response {
-    my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
-
+    #my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
+    my ($kernel, $heap, $request_packet, $response_packet) = @_[KERNEL, HEAP, ARG0, ARG1];
+#use Data::Dumper; print 'FEED: HEAP ', $heap, ' ', Dumper $heap;
     my $feednum       = $request_packet->[1];
     my $http_response = $response_packet->[0];
 
-    my $feed = $feeds[ $feednum ];
+    my $feed = $g_feeds[ $feednum ];
 
-    my $was_working = $feed->{working};
+    my $was_working = defined $feed->{working} ? $feed->{working} : -1;
     my $is_working = $feed->{working} = $http_response->is_success;
 
     # unless we're just starting up report feeds which start or stop working
-    #if ($tick_num >= scalar @feeds) {
-        if ($is_working != $was_working) {
-            my $msg = '** feed \'' . $feed->{name} . '\' is now ' . ($is_working ? 'working' : 'down');
-            print STDERR "$msg\n";
-            $irc->yield( privmsg => '#hippiebot', $msg );
-        }
-    #}
+    if ($is_working != $was_working) {
+        my $msg = '** feed \'' . $feed->{name} . '\' is ';
+        $msg .= 'now ' unless $was_working == -1;
+        $msg .= ($is_working ? 'working' : 'down');
+        $msg .= ' at startup' if $was_working == -1;
+
+        print STDERR "$msg\n";
+        $g_irc->yield( privmsg => '#hippiebot', $msg );
+    }
 
     if ($is_working) {
         my $in = 0;
@@ -495,19 +518,19 @@ sub on_feed_response {
             # after that, all *new* items
 
             if (exists $feed->{initial_check_done}) {
-$i == 0 && print STDERR $feed->{name}, " has been checked before\n";
+#$i == 0 && print STDERR $feed->{name}, " has been checked before\n";
                 $announce = ! exists $feed->{seen}->{$t};
             } else {
 $i == 0 && print STDERR $feed->{name}, " initial feed check\n";
                 $announce = $i == 0 && !$opt_F;
             }
-print STDERR 'announce: ', $announce, ' ', $feed->{name}, '[', $i, "]\n";
+#print STDERR 'announce: ', $announce, ' ', $feed->{name}, '[', $i, "]\n";
 
-            $opt_d && !$opt_F && print STDERR 'tick: ', $tick_num, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
+            $opt_d && !$opt_F && print STDERR 'tick: ', $g_tick_num, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
 
             # TODO should each channel should have its own feed delay when one bot can join multiple channels
-            foreach my $ch (@{$hippiebot{channels}}) {
-                $announce && $irc->yield( privmsg => $ch, $feed->{name} . ': ' . $t );
+            foreach my $ch (@{$g_hippiebot{channels}}) {
+                $announce && $g_irc->yield( privmsg => $ch, $feed->{name} . ': ' . $t );
             }
 
             $feed->{seen}->{$t} = 1;
@@ -515,8 +538,8 @@ print STDERR 'announce: ', $announce, ' ', $feed->{name}, '[', $i, "]\n";
         $feed->{initial_check_done} = 1;
     }
 
-    $kernel->delay( feed_timer => $feed_delay );
-    ++ $tick_num;
+    $kernel->delay( feed_timer => $g_feed_delay );
+    ++ $g_tick_num;
 }
 
 # The bot has received a disconnection message.
@@ -592,13 +615,13 @@ sub do_lang {
     my $codes = $input;
 
     my $newuri = 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=';
-    if (exists $three2one{$input}) {
-        $codes .= ',' . $three2one{$input};
+    if (exists $g_three2one{$input}) {
+        $codes .= ',' . $g_three2one{$input};
     }
 
     my $nname = normalize_lang_name($input);
-    if (exists $name2code{$nname}) {
-        $codes .= ',' . join(',', @{$name2code{$nname}});
+    if (exists $g_name2code{$nname}) {
+        $codes .= ',' . join(',', @{$g_name2code{$nname}});
     }
 
     # TODO asynch?
@@ -607,14 +630,19 @@ sub do_lang {
 
     if ($json) {
         # utf8(1) here prevents the native name from becoming mojibake (ENWIKT-27)
-        $metadata = $js->utf8(1)->decode($json);
+        $metadata = $g_js->utf8(1)->decode($json);
     } else {
         print STDERR "couldn't get data on language codes ($codes) from langmetadata sever\n";
     }
 
     # add info extracted from the Wiktionary templates
-    if (exists $enwikt{$input}) {
-        $metadata->{$input}->{enwiktname} = $enwikt{$input};
+    if (exists $g_enwikt{$input}) {
+        $metadata->{$input}->{enwiktname} = $g_enwikt{$input};
+    }
+
+    # add info extracted from the Wikipedia templates
+    if (exists $g_enwiki{$input}) {
+        $metadata->{$input}->{enwikiname} = $g_enwiki{$input};
     }
 
     my $ok = 0;
@@ -632,7 +660,7 @@ sub do_lang {
             # TODO asynch?
             if (my $json = get $uri) {
                 if ($json) {
-                    my $data = $js->decode($json);
+                    my $data = $g_js->decode($json);
                     if (exists $data->{results} && exists $data->{results}->{bindings}) {
                         foreach my $b (@{$data->{results}->{bindings}}) {
                             my $l = {
@@ -642,10 +670,10 @@ sub do_lang {
                             push @dbp, $l;
                         }
                     } else {
-                        use Data::Dumper; print 'no DBpedia: ', Dumper $data;
+                        use Data::Dumper; print STDERR '** no DBpedia: ', Dumper $data;
                     }
-                }
-            }
+                } else { print STDERR "** DBpedia fail code 2\n"; }
+            } else { print STDERR "** DBpedia fail code 1\n"; }
 
             foreach my $l (%$metadata) {
                 my $eng = metadata_to_english($l, $metadata->{$l}, \@dbp);
@@ -655,6 +683,7 @@ sub do_lang {
                 }
             }
         } else {
+            # TODO only report which sources were actually checked since sitmatrix, wikt, langmetadata, etc may be broken individually
             @resps = ($input . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.');
         }
     } else {
@@ -691,6 +720,9 @@ sub metadata_to_english {
     if ($l->{enwiktname}) {
         $names{$l->{enwiktname}} = 1;
     }
+    if ($l->{enwikiname}) {
+        $names{$l->{enwikiname}} = 1;
+    }
     if ($l->{nn}) {
         if ($l->{nn} =~ /^(.*?) ?\/ ?(.*?)$/) { # bpy/cr/cu/iu/ku/pih/sh/sr/tt/ug
             $names{$1} = 1;
@@ -719,7 +751,7 @@ sub metadata_to_english {
 
             if (exists $l->{fam}) {
                 $famcode = $l->{fam};
-                $famname = $fam{$famcode};
+                $famname = $g_fam{$famcode};
             } elsif (scalar @$dbp) {
                 # TODO look at all entries
                 $famcode = $dbp->[0]->{fc};
@@ -901,7 +933,7 @@ sub do_toc {
     my $json = get $uri . $page;
 
     if ($json) {
-        $data = $js->decode($json);
+        $data = $g_js->decode($json);
 
         if (exists $data->{parse} && exists $data->{parse}->{sections}) {
             my @langs;
@@ -935,7 +967,7 @@ sub do_gf {
     my $resp = undef;
 
     if ($channel) {
-        if (grep $_ eq 'know-it-all', $irc->channel_list($channel)) {
+        if (grep $_ eq 'know-it-all', $g_irc->channel_list($channel)) {
             # gf know it all
             $ok = 1 if $force;
         } else {
@@ -951,7 +983,8 @@ sub do_gf {
 
         $terms{$_} = undef for ($args =~ /(".*?"|\S+)/g);
 
-        $googlefights{$googlefight_id} = {
+        # TODO use heap
+        $g_googlefights{$g_googlefight_id} = {
             channel => $channel,
             nick => $nick,
             numterms => scalar keys %terms,
@@ -963,11 +996,15 @@ sub do_gf {
             $kernel->post(
                 'my-http', 'request',
                 'gf_response',
+                # Google
                 GET ('http://www.google.com.au/search?q=' . $term),
-                $googlefight_id . '.' . $term);
+                # Bing
+                #GET ('http://www.bing.com/search?q=' . $term),
+                $g_googlefight_id . '.' . $term);
         }
 
-        ++ $googlefight_id;
+        # TODO use heap
+        ++ $g_googlefight_id;
     }
 
     hippbotlog('gf', '', $ok);
@@ -977,19 +1014,28 @@ sub do_gf {
 
 # handle an incoming googlefight response
 sub on_gf_response {
-    my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
+    #my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
+    my ($kernel, $heap, $request_packet, $response_packet) = @_[KERNEL, HEAP, ARG0, ARG1];
+#use Data::Dumper; print 'GF: HEAP ', $heap, ' ', Dumper $heap;
 
     my $gf_req_id     = $request_packet->[1];
     my $http_response = $response_packet->[0];
 
     $gf_req_id =~ /^(\d+)\.(.*)$/;
     my ($gf_id, $term) = ($1, $2);
-    my $fight = $googlefights{$gf_id};
+    my $fight = $g_googlefights{$gf_id};    # TODO use heap
 
+#$heap->{gf}->[$gf_id] ++;
     # parse html
+    # Google
     if ($http_response->decoded_content =~ /Results <b>1<\/b> - <b>\d+<\/b> of about <b>([0-9,]+)<\/b> for <b>/) {
+    # Bing
+    #if ($http_response->decoded_content =~ /<span class="sb_count" id="count">1-\d+ van ([0-9\.]+) resultaten<\/span>/) {
         $fight->{terms}->{$term} = [$1, $1];
+        # Google
         $fight->{terms}->{$term}->[1] =~ s/,//g;
+        # Bing
+        #$fight->{terms}->{$term}->[1] =~ s/\.//g;
     } else {
         $fight->{terms}->{$term} = [0, 0];
     }
@@ -1005,12 +1051,13 @@ sub on_gf_response {
                 $fight->{terms}->{$b}->[1] <=> $fight->{terms}->{$a}->[1]
             } keys %{$fight->{terms}});
 
+        # TODO generic yield privmsg sub
         if (defined $fight->{channel} && defined $fight->{nick}) {
-            $irc->yield( privmsg => $fight->{channel}, $fight->{nick} . ': ' . $resp );
+            $g_irc->yield( privmsg => $fight->{channel}, $fight->{nick} . ': ' . $resp );
         } elsif (defined $fight->{channel}) {
-            $irc->yield( privmsg => $fight->{channel}, $resp );
+            $g_irc->yield( privmsg => $fight->{channel}, $resp );
         } elsif (defined $fight->{nick}) {
-            $irc->yield( privmsg => $fight->{nick}, $resp );
+            $g_irc->yield( privmsg => $fight->{nick}, $resp );
         } else {
             print STDERR "** gf no channel or nick impossible!\n";
         }
@@ -1028,17 +1075,17 @@ sub do_define {
 
     my ($kia, $cb);
 
-    $kia = scalar grep $_ eq 'know-it-all', $irc->channel_list($channel);
-    $cb = scalar grep $_ eq 'club_butler', $irc->channel_list($channel);
+    $kia = scalar grep $_ eq 'know-it-all', $g_irc->channel_list($channel);
+    $cb = scalar grep $_ eq 'club_butler', $g_irc->channel_list($channel);
 
     # define doesn't work with /msg
     if ($channel) {
         if ($bot eq 'know-it-all') {
             if ($kia) {
                 if ($channel ne '#wiktionary') {
-                    push @kia_queue, $term;
+                    push @g_kia_queue, $term;
                     $ok = 1;
-                    print STDERR "KIA-DEFINE '$term' (", scalar @kia_queue, ")\n";
+                    print STDERR "KIA-DEFINE '$term' (", scalar @g_kia_queue, ")\n";
                 }
             } elsif ($cb) {
                 $resp = 'try ".?" instead of "define"';
@@ -1048,9 +1095,9 @@ sub do_define {
         } elsif ($bot eq 'club_butler') {
             if ($cb) {
                 if ($channel ne '#wiktionary') {
-                    push @cb_queue, $term;
+                    push @g_cb_queue, $term;
                     $ok = 1;
-                    print STDERR "CB-DEFINE '$term' (", scalar @cb_queue, ")\n";
+                    print STDERR "CB-DEFINE '$term' (", scalar @g_cb_queue, ")\n";
                 }
             } elsif ($kia) {
                 $resp = 'try "define" instead of ".?"';
@@ -1082,8 +1129,8 @@ sub do_suggest {
         ++ $script{$s}
     }
 
-    ## heuristics to decide languages based on scripts
-    ## TODO use langmetadata server
+    # heuristics to decide languages based on scripts
+    # TODO use langmetadata server ?
 
     my %codes;
     my %names;
@@ -1145,7 +1192,8 @@ sub do_suggest {
     # we no longer need the UTF-8 term so encode it for use in URLs
     $term = uri_escape_utf8($term);
 
-    my $suggq = $suggests{$suggest_id} = {
+    # TODO use heap
+    my $suggq = $g_suggests{$g_suggest_id} = {
         channel => $channel,
         nick => $nick,
         allreqs => 0,
@@ -1164,7 +1212,7 @@ sub do_suggest {
             'my-http', 'request',
             'sugg_response',
             GET ($url),
-            $suggest_id . '.' . 'g' . '-' . $lc . '-' . $term);
+            $g_suggest_id . '.' . 'g' . '-' . $lc . '-' . $term);
 
         ++ $suggq->{numresps};
 
@@ -1177,7 +1225,7 @@ sub do_suggest {
                 'my-http', 'request',
                 'sugg_response',
                 GET ($url),
-                $suggest_id . '.' . 'mw' . '-' . $lc . '-' . $term);
+                $g_suggest_id . '.' . 'mw' . '-' . $lc . '-' . $term);
 
             ++ $suggq->{numresps};
         }
@@ -1191,7 +1239,7 @@ sub do_suggest {
                 'my-http', 'request',
                 'sugg_response',
                 GET ($url),
-                $suggest_id . '.' . 'mw' . '-' . $lc . '-' . $term);
+                $g_suggest_id . '.' . 'mw' . '-' . $lc . '-' . $term);
 
             ++ $suggq->{numresps};
         }
@@ -1204,7 +1252,7 @@ sub do_suggest {
                 'my-http', 'request',
                 'sugg_response',
                 GET ($url),
-                $suggest_id . '.' . $site . '-' . $lc . '-' . $term);
+                $g_suggest_id . '.' . $site . '-' . $lc . '-' . $term);
 
             ++ $suggq->{numresps};
         }
@@ -1217,28 +1265,33 @@ sub do_suggest {
         'my-http', 'request',
         'sugg_response',
         GET ($url),
-        $suggest_id . '.' . 'nearby' . '-' . '*' . '-' . $term);
+        $g_suggest_id . '.' . 'nearby' . '-' . '*' . '-' . $term);
 
     ++ $suggq->{numresps};
 
     $suggq->{allreqs} = 1;
-    ++ $suggest_id;
+    ++ $g_suggest_id;
 
     return undef;
 }
 
 # handle an incoming suggest response
 sub on_sugg_response {
-    my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
+    #my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
+    my ($kernel, $heap, $request_packet, $response_packet) = @_[KERNEL, HEAP, ARG0, ARG1];
+#use Data::Dumper; print 'SUGG: HEAP ', $heap, ' ', Dumper $heap;
 
     my $sugg_req_id     = $request_packet->[1];
     my $http_response = $response_packet->[0];
 
     $sugg_req_id =~ /^(\d+)\.(.*)-(.*)-(.*)$/;
     my ($sugg_id, $site, $lang, $term) = ($1, $2, $3, $4);
-    my $fight = $suggests{$sugg_id};
-
+    my $fight = $g_suggests{$sugg_id};
+#$heap->{sugg}->[$sugg_id]++;
     # PARSE $http_response->decoded_content
+
+    # used by eash suggestor
+    my $json;
     my @a;
 
     if ($site eq 'g') {
@@ -1259,7 +1312,7 @@ sub on_sugg_response {
 
         if ($http_response->is_success) {
             if ($json) {
-                my $res = $js->decode($json);
+                my $res = $g_js->decode($json);
                 if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
                     ++ $fight->{dym}->{$res->{query}->{searchinfo}->{suggestion}};
                 }
@@ -1274,7 +1327,7 @@ sub on_sugg_response {
             if ($json) {
                 # the logic of utf8() is reversed for decode() but correct for encode()!!
                 my $confusing = ! utf8::is_utf8($json);
-                my $res = $js->utf8($confusing)->decode($json);  # works with charset => 'UTF-8' above
+                my $res = $g_js->utf8($confusing)->decode($json);  # works with charset => 'UTF-8' above
 
                 if (exists $res->{prev}) {
                     $fight->{dym}->{$res->{prev}->[0]} += 0.5;
@@ -1302,7 +1355,7 @@ sub on_sugg_response {
             my %col;
 
             if ($json) {
-                my $res = $js->decode($json);
+                my $res = $g_js->decode($json);
 
                 if (exists $res->{query} && exists $res->{query}->{pages}) {
                     for my $d (values %{$res->{query}->{pages}}) {
@@ -1336,12 +1389,13 @@ sub on_sugg_response {
             $resp = 'I have little to suggest for "' . $term . '".';
         }
 
+        # TODO generic yield privmsg sub
         if (defined $fight->{channel} && defined $fight->{nick}) {
-            $irc->yield( privmsg => $fight->{channel}, $fight->{nick} . ': ' . $resp );
+            $g_irc->yield( privmsg => $fight->{channel}, $fight->{nick} . ': ' . $resp );
         } elsif (defined $fight->{channel}) {
-            $irc->yield( privmsg => $fight->{channel}, $resp );
+            $g_irc->yield( privmsg => $fight->{channel}, $resp );
         } elsif (defined $fight->{nick}) {
-            $irc->yield( privmsg => $fight->{nick}, $resp );
+            $g_irc->yield( privmsg => $fight->{nick}, $resp );
         } else {
             print STDERR "** sugg no channel or nick impossible!\n";
         }
