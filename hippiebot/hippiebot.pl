@@ -1,8 +1,17 @@
 #!/usr/bin/perl -I/home/hippietrail/perl5/lib/perl5 -I/home/hippietrail/lib
 
 # This was a simple IRC bot that knows about languages.
-# It originally responded to:
-# "lang <code>", "dumps", "random <language code|language name>"
+#
+# commands:
+#
+# .?            only in channel
+# define        only in channel
+# dumps         always
+# gf(!) ...     in channels only when know-it-all is not present or suffixed with !
+# lang ...      always though in #wiktionary maybe it should only add to know-it-all's information
+# random ...    always
+# !suggest ...  always though outside #wiktionary maybe it should work even without the ! prefix
+# toc ...       always
 
 use warnings;
 use strict;
@@ -284,6 +293,12 @@ sub on_connect {
 
 # The bot has received a public message.  Parse it for commands, and
 # respond to interesting things.
+
+# respond to some plain commands always
+# respond to all plain commands when followed by !
+# respond to all ! prefixed commands
+# respond to some comments by users and other bots which are not commands
+
 sub on_public {
     my ( $kernel, $who, $where, $msg, $nickserv ) = @_[ KERNEL, ARG0, ARG1, ARG2, ARG3 ];
     my $nick = ( split /!/, $who )[0];
@@ -293,10 +308,11 @@ sub on_public {
 
     my $ts = scalar localtime;
 
+    # hippiebot doesn't respond to "define" or ".?" directly
+    # but it tracks them and may respond if other bots fail
+
     # SYNCHRONOUS
     if ( my ($kiaterm) = $msg =~ /^define (.+)$/) {
-        print "1 [$ts] <$nick:$channel> $msg\n";
-
         my $resp = do_define($channel, 'know-it-all', $kiaterm);
 
         $resp && $g_irc->yield( privmsg => $channel, $resp );
@@ -304,22 +320,22 @@ sub on_public {
 
     # SYNCHRONOUS
     elsif ( my ($dbterm) = $msg =~ /^\.\? (.+)$/) {
-        print "2 [$ts] <$nick:$channel> $msg\n";
-
         my $resp = do_define($channel, 'club_butler', $dbterm);
 
         $resp && $g_irc->yield( privmsg => $channel, $resp );
     }
 
-    #elsif ( $nick eq 'hippietrail' && $nickserv ) {
-    #    print "3 [$ts] <$nick:$channel> $msg\n";
+    # respond to the bot owner sometimes
 
+    #elsif ( $nick eq 'hippietrail' && $nickserv ) {
     #    my $resp = do_hippietrail($msg);
 
     #    $resp && $g_irc->yield( privmsg => $channel, $resp );
     #}
 
-    # ASYNCHRONOUS
+    # respond when other bots return negative responses to commands
+
+    # ASYNCHRONOUS TODO channels should be configurable
     elsif ( $nick eq 'know-it-all' && $channel ne '#wiktionary' ) {
         my ($defineresp, $known);
 
@@ -337,8 +353,6 @@ sub on_public {
         }
 
         if ($defineresp) {
-            #print "4 [$ts] <$nick:$channel> $msg\n";
-
             unless ($known) {
                 print STDERR "SUGGEST\t'$g_kia_queue[-1]'\t(", scalar @g_kia_queue, ")\n"; 
                 # ASYNCH
@@ -349,7 +363,7 @@ sub on_public {
         }
     }
 
-    # ASYNCHRONOUS
+    # ASYNCHRONOUS TODO channels should be configurable
     elsif ( $nick eq 'club_butler' && $channel ne '#wiktionary' ) {
         my ($defineresp, $known);
         my ($term, $pos);
@@ -372,8 +386,6 @@ sub on_public {
         }
 
         if ($defineresp) {
-            #print "5 [$ts] <$nick:$channel> $msg\n";
-
             unless ($known) {
                 print STDERR "SUGGEST\t'$g_cb_queue[-1]'\t(", scalar @g_cb_queue, ")\n"; 
                 # ASYNCH
@@ -383,6 +395,8 @@ sub on_public {
             }
         }
     }
+
+    # look for all other commands in a generic way that also works with /msg and addressing
 
     # SYNCHRONOUS & ASYNCHRONOUS
     else {
@@ -397,6 +411,10 @@ sub on_public {
 
 # The bot has received a private message.  Parse it for commands, and
 # respond to interesting things.
+
+# respond to all plain commands whether or not followed by !
+# respond to all ! prefixed commands
+
 sub on_msg {
     my ( $kernel, $who, $where, $msg ) = @_[ KERNEL, ARG0, ARG1, ARG2 ];
     my $nick = ( split /!/, $who )[0];
@@ -417,6 +435,10 @@ sub on_msg {
 
 # The bot has been addressed in a channel.  Parse it for commands, and
 # respond to interesting things.
+
+# respond to all plain commands whether or not followed by !
+# respond to all ! prefixed commands
+
 sub on_bot_addressed {
     my ( $kernel, $who, $where, $msg ) = @_[ KERNEL, ARG0, ARG1, ARG2 ];
     my $nick = ( split /!/, $who )[0];
@@ -571,6 +593,8 @@ sub on_socketerr {
 
 #### do_ implementations ####
 
+# generically handle commands whether they were said publicly in a channel,
+# addressed to the bot specifically, or /msg'd to the bot
 sub do_command {
     my ( $kernel, $channel, $nick, $msg ) = @_;
     my $force;
@@ -609,7 +633,7 @@ sub do_command {
     return $resps;
 }
 
-# TOO ASYNCHRONOUS ?
+# TODO ASYNCHRONOUS ?
 sub do_lang {
     my $input = shift;
     my $codes = $input;
