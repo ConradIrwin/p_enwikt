@@ -61,6 +61,7 @@ my %g_suggests;
 my $g_suggest_id = 0;
 
 my $g_lang_id = 0;
+my $g_toc_id = 0;
 
 # slurp dumped enwikt language code : name mappings
 my %g_enwikt;
@@ -260,11 +261,11 @@ POE::Session->create(
         irc_socketerr     => \&on_socketerr,
         feed_timer        => \&on_feed_timer,
         feed_response     => \&on_feed_response,
+        json_response     => \&on_json_response,
         gf_response       => \&on_gf_response,
         lang_response     => \&on_lang_response,
         sugg_response     => \&on_sugg_response,
-        json_response     => \&on_json_response,
-        lang_json_response=> \&on_lang_json_response,
+        toc_response      => \&on_toc_response,
     },
 );
 
@@ -651,7 +652,7 @@ sub do_command {
     my $args;
     my $resps = [];
 
-    # synchronous commands which can return multiple lines
+    # asynchronous commands which can return multiple lines
     if ( ($args) = $msg =~ /^lang (.+)/ ) {
         # TODO ASYNCH ?
         $resps = do_lang($kernel, $heap, $channel, $nick, $args);
@@ -664,19 +665,17 @@ sub do_command {
     } elsif ( ($args) = $msg =~ /^random\s+(.+)\s*$/ ) {
         # TODO ASYNCH ?
         $resps->[0] = do_random($args);
-    } elsif ( ($args) = $msg =~ /^toc\s+(.+)\s*$/ ) {
-        # TODO ASYNCH ?
-        $resps->[0] = do_toc($args);
     }
 
     # asynchronous commands
     elsif ( ($force, $args) = $msg =~ /^gf(!)?\s+(.+)\s*$/ ) {
-        # ASYNCH
         my $resp = do_gf($kernel, $channel, $nick, $force, $args);
         $resps->[0] = $resp if defined $resp;
     } elsif ( ($args) = $msg =~ /^!suggest\s+(.+)\s*$/ ) {
-        # TODO ASYNCH
         my $resp = do_suggest($kernel, $channel, $nick, $args);
+        $resps->[0] = $resp if defined $resp;
+    } elsif ( ($args) = $msg =~ /^toc\s+(.+)\s*$/ ) {
+        my $resp = do_toc($kernel, $heap, $channel, $nick, $args);
         $resps->[0] = $resp if defined $resp;
     }
 
@@ -720,14 +719,14 @@ sub do_lang {
 
     post_json_req(
         $kernel, $heap,
-        'lang_json_response',
+        'lang_response',
         GET ($fulluri),
         $id);
 
     return undef;
 }
 
-sub on_lang_json_response {
+sub on_lang_response {
     my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
 
     my $langreq = $heap->{lang}->[$id];
@@ -801,7 +800,7 @@ sub on_lang_json_response {
         } elsif (defined $langreq->{nick}) {
             $g_irc->yield( privmsg => $langreq->{nick}, $resp );
         } else {
-            print STDERR "** gf no channel or nick impossible!\n";
+            print STDERR "** lang no channel or nick impossible!\n";
         }
     }
 }
@@ -1029,20 +1028,33 @@ sub do_random {
 
 # TODO ASYNCHRONOUS ?
 sub do_toc {
-    my $page = shift;
+    my ( $kernel, $heap, $channel, $nick, $page ) = @_;
+
+    my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=sections&page=' . $page;
+
+    my $id = $g_toc_id ++;
+
+    $heap->{toc}->[$id] = { channel => $channel, nick => $nick, page => $page };
+
+    post_json_req(
+        $kernel, $heap,
+        'toc_response',
+        GET ($uri),
+        $id);
+
+    return undef;
+}
+
+sub on_toc_response {
+    my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
+
+    my $tocreq = $heap->{toc}->[$id];
+    my $page = $tocreq->{page};
+
     my $ok = 0;
     my $resp = $page . ': ';
 
-    my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=sections&page=';
-
-    # TODO use POE::Component::Client::HTTP
-    my $data;
-    my $json = get $uri . $page;
-
-    if ($json) {
-        # TODO try/catch with eval in case $json does not contain legal JSON
-        $data = $g_js->decode($json);
-
+    if (my $data = $ref) {
         if (exists $data->{parse} && exists $data->{parse}->{sections}) {
             my @langs;
             foreach my $s (@{$data->{parse}->{sections}}) {
@@ -1054,14 +1066,22 @@ sub do_toc {
             } else {
                 $resp .= 'couldn\'t see any language headings';
             }
+        } else {
+            print STDERR "** toc: JSON data missing parse/sections fields\n";
         }
-    } else {
-        print STDERR "couldn't get data on TOC\'s for \'$page\' from the Toolserver\n";
-    }
+    } else { print STDERR "** toc: $http_code : $err\n"; }
 
     hippbotlog('toc', '', $ok);
 
-    return $resp;
+    if (defined $tocreq->{channel} && defined $tocreq->{nick}) {
+        $g_irc->yield( privmsg => $tocreq->{channel}, $tocreq->{nick} . ': ' . $resp );
+    } elsif (defined $tocreq->{channel}) {
+        $g_irc->yield( privmsg => $tocreq->{channel}, $resp );
+    } elsif (defined $tocreq->{nick}) {
+        $g_irc->yield( privmsg => $tocreq->{nick}, $resp );
+    } else {
+        print STDERR "** toc no channel or nick impossible!\n";
+    }
 }
 
 # ASYNCHRONOUS
