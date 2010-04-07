@@ -4,8 +4,8 @@
 #
 # commands:
 #
-# .?            only in channel
-# define        only in channel
+# .?            only in channel, depends on the bot club_butler
+# define        only in channel, depends on the bot know-it-all
 # dumps         always
 # gf(!) ...     in channels only when know-it-all is not present or suffixed with !
 # lang ...      always though in #wiktionary maybe it should only add to know-it-all's information
@@ -59,6 +59,8 @@ my $g_googlefight_id = 0;
 # TODO move to session heap
 my %g_suggests;
 my $g_suggest_id = 0;
+
+my $g_lang_id = 0;
 
 # slurp dumped enwikt language code : name mappings
 my %g_enwikt;
@@ -173,6 +175,7 @@ my %g_name2code;
     unless ($json) {
         print STDERR "** couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
     } else {
+        # TODO try/catch with eval in case $json does not contain legal JSON
         my $data = $g_js->decode($json);
 
         while (my ($k, $v) = each %$data) {
@@ -196,6 +199,7 @@ my %g_name2code;
 
 # part configuration, part main bot object
 my %g_hippiebot = (
+    owner => [ 'hippietrail', 'hippietrailwork' ],
     botnick => 'hippiebot',
     channels => [ '#wiktionary', '#Wiktionarydev', '#hippiebot' ],
 );
@@ -257,7 +261,10 @@ POE::Session->create(
         feed_timer        => \&on_feed_timer,
         feed_response     => \&on_feed_response,
         gf_response       => \&on_gf_response,
+        lang_response     => \&on_lang_response,
         sugg_response     => \&on_sugg_response,
+        json_response     => \&on_json_response,
+        lang_json_response=> \&on_lang_json_response,
     },
 );
 
@@ -284,6 +291,49 @@ sub bot_start {
 
 #### on_ handlers ####
 
+# JSON wrapper for POE::Component::Client::HTTP
+
+my $g_json_req_id = 0;
+
+# post an asynchronous JSON request
+sub post_json_req {
+    my ($kernel, $heap, $response_state, $request, $id) = @_;
+
+    my $_id = $g_json_req_id ++;
+
+    $heap->{json}->[$_id] = { id => $id, response_state => $response_state };
+
+    $kernel->post(
+        'my-http', 'request',
+        'json_response',
+        $request,
+        $_id);
+}    
+
+# handle an incoming asynchronous JSON response
+sub on_json_response {
+    my ($kernel, $heap, $request_packet, $response_packet) = @_[KERNEL, HEAP, ARG0, ARG1];
+
+    my $_id = $request_packet->[1];
+    my $http_response = $response_packet->[0];
+
+    my $ref;
+    my $err;
+
+    if ($http_response->is_success) {
+        my $json = $http_response->decoded_content;
+        eval {
+            # the logic of utf8() is reversed for decode() but correct for encode()!!
+            $ref = $g_js->utf8(!utf8::is_utf8($json))->decode($json);
+        };
+        if ($@) {
+            $err = $@;
+        }
+    }
+
+    $kernel->yield( $heap->{json}->[$_id]->{response_state} => $heap->{json}->[$_id]->{id}, $http_response->code, $ref, $err );
+}
+
 # The bot has successfully connected to a server.  Join all channels.
 sub on_connect {
     foreach my $ch (@{$g_hippiebot{channels}}) {
@@ -300,7 +350,7 @@ sub on_connect {
 # respond to some comments by users and other bots which are not commands
 
 sub on_public {
-    my ( $kernel, $who, $where, $msg, $nickserv ) = @_[ KERNEL, ARG0, ARG1, ARG2, ARG3 ];
+    my ( $kernel, $heap, $who, $where, $msg, $nickserv ) = @_[ KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3 ];
     my $nick = ( split /!/, $who )[0];
     my $channel = $where->[0];
 
@@ -401,7 +451,7 @@ sub on_public {
     # SYNCHRONOUS & ASYNCHRONOUS
     else {
         print "PUBLIC [$ts] <$nick:$channel> $msg\n";
-        my $resps = do_command($kernel, $channel, undef, $msg);
+        my $resps = do_command($kernel, $heap, $channel, undef, $msg);
 
         foreach (@$resps) {
             $g_irc->yield( privmsg => $channel, $_ );
@@ -416,7 +466,7 @@ sub on_public {
 # respond to all ! prefixed commands
 
 sub on_msg {
-    my ( $kernel, $who, $where, $msg ) = @_[ KERNEL, ARG0, ARG1, ARG2 ];
+    my ( $kernel, $heap, $who, $where, $msg ) = @_[ KERNEL, HEAP, ARG0, ARG1, ARG2 ];
     my $nick = ( split /!/, $who )[0];
     my $channel = $where->[0];
     my $resps;
@@ -426,7 +476,7 @@ sub on_msg {
     my $ts = scalar localtime;
     print "MSG [$ts] <$nick:$channel> $msg\n";
 
-    $resps = do_command($kernel, undef, $nick, $msg);
+    $resps = do_command($kernel, $heap, undef, $nick, $msg);
 
     foreach (@$resps) {
         $g_irc->yield( privmsg => $nick, $_ );
@@ -440,7 +490,7 @@ sub on_msg {
 # respond to all ! prefixed commands
 
 sub on_bot_addressed {
-    my ( $kernel, $who, $where, $msg ) = @_[ KERNEL, ARG0, ARG1, ARG2 ];
+    my ( $kernel, $heap, $who, $where, $msg ) = @_[ KERNEL, HEAP, ARG0, ARG1, ARG2 ];
     my $nick = ( split /!/, $who )[0];
     my $channel = $where->[0];
     my $resps;
@@ -450,7 +500,7 @@ sub on_bot_addressed {
     my $ts = scalar localtime;
     print "ADDRESS [$ts] <$nick:$channel> $msg\n";
 
-    $resps = do_command($kernel, $channel, $nick, $msg);
+    $resps = do_command($kernel, $heap, $channel, $nick, $msg);
 
     foreach (@$resps) {
         $g_irc->yield( privmsg => $channel, $nick . ': ' . $_ );
@@ -596,7 +646,7 @@ sub on_socketerr {
 # generically handle commands whether they were said publicly in a channel,
 # addressed to the bot specifically, or /msg'd to the bot
 sub do_command {
-    my ( $kernel, $channel, $nick, $msg ) = @_;
+    my ( $kernel, $heap, $channel, $nick, $msg ) = @_;
     my $force;
     my $args;
     my $resps = [];
@@ -604,7 +654,7 @@ sub do_command {
     # synchronous commands which can return multiple lines
     if ( ($args) = $msg =~ /^lang (.+)/ ) {
         # TODO ASYNCH ?
-        $resps = do_lang($args);
+        $resps = do_lang($kernel, $heap, $channel, $nick, $args);
     }
 
     # synchronous commands which return one line
@@ -633,57 +683,82 @@ sub do_command {
     return $resps;
 }
 
-# TODO ASYNCHRONOUS ?
+# TODO ASYNCHRONOUS
 sub do_lang {
-    my $input = shift;
+    my ( $kernel, $heap, $channel, $nick, $input ) = @_;
     my $codes = $input;
 
     my $newuri = 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=';
+
+    # input may be a language code or language name, in fact it could be both!
+
+    # if input is a 3-letter language code we'll also look up any equivalent 2-letter code it may have
+    
+    # XXX not available if langmetadata failed at bot startup
     if (exists $g_three2one{$input}) {
         $codes .= ',' . $g_three2one{$input};
     }
 
+    # try to ignore case and diacritics
     my $nname = normalize_lang_name($input);
+
+    # if input is a language name we'll find all matching language codes, even when two languages have
+    # the same name
+
+    # XXX not available if langmetadata failed at bot startup
     if (exists $g_name2code{$nname}) {
         $codes .= ',' . join(',', @{$g_name2code{$nname}});
     }
 
-    # TODO asynch?
-    my $metadata;
-    my $json = get $newuri . $codes;
+    # now look up all the codes at once on the language metadata server
 
-    if ($json) {
-        # utf8(1) here prevents the native name from becoming mojibake (ENWIKT-27)
-        $metadata = $g_js->utf8(1)->decode($json);
-    } else {
-        print STDERR "couldn't get data on language codes ($codes) from langmetadata sever\n";
-    }
+    my $fulluri = $newuri . $codes;
 
-    # add info extracted from the Wiktionary templates
-    if (exists $g_enwikt{$input}) {
-        $metadata->{$input}->{enwiktname} = $g_enwikt{$input};
-    }
+    my $id = $g_lang_id ++;
 
-    # add info extracted from the Wikipedia templates
-    if (exists $g_enwiki{$input}) {
-        $metadata->{$input}->{enwikiname} = $g_enwiki{$input};
-    }
+    $heap->{lang}->[$id] = { channel => $channel, nick => $nick, input => $input, codes => $codes };
+
+    post_json_req(
+        $kernel, $heap,
+        'lang_json_response',
+        GET ($fulluri),
+        $id);
+
+    return undef;
+}
+
+sub on_lang_json_response {
+    my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
+
+    my $langreq = $heap->{lang}->[$id];
+    my $input = $langreq->{input};
+    my $codes = $langreq->{codes};
 
     my $ok = 0;
     my @resps;
 
-    if ($metadata) {
-        if (scalar keys %$metadata) {
+    if (my $metadata = $ref) {
+        # add code=>name pairs extracted from the Wiktionary templates
+        if (exists $g_enwikt{$input}) {
+            $metadata->{$input}->{enwiktname} = $g_enwikt{$input};
+        }
 
-            # DBpedia metadata
-            my $endpoint = 'http://dbpedia.org/sparql?default-graph-uri=http%3A%2F%2Fdbpedia.org&format=json&query=';
-            my $query = 'PREFIX p: <http://dbpedia.org/property/> PREFIX t: <http://dbpedia.org/resource/Template:> SELECT DISTINCT ?lc,?fn,?fc WHERE{?lp p:wikiPageUsesTemplate t:infobox_language;p:iso ?lc;p:fam ?fp.?fp p:wikiPageUsesTemplate t:infobox_language_family;p:name ?fn.optional{?fp p:iso ?fc}.FILTER (regex(?lc,"^(' . join('|', keys %$metadata) . ')$"))}ORDER BY ?lc';
-            my $uri = $endpoint . uri_escape($query);
-            my @dbp;
+        # add code=>name pairs extracted from the Wikipedia templates
+        if (exists $g_enwiki{$input}) {
+            $metadata->{$input}->{enwikiname} = $g_enwiki{$input};
+        }
 
-            # TODO asynch?
-            if (my $json = get $uri) {
-                if ($json) {
+        if ($metadata) {
+            if (scalar keys %$metadata) {
+                # DBpedia metadata
+                my $endpoint = 'http://dbpedia.org/sparql?default-graph-uri=http%3A%2F%2Fdbpedia.org&format=json&query=';
+                my $query = 'PREFIX p: <http://dbpedia.org/property/> PREFIX t: <http://dbpedia.org/resource/Template:> SELECT DISTINCT ?lc,?fn,?fc WHERE{?lp p:wikiPageUsesTemplate t:infobox_language;p:iso ?lc;p:fam ?fp.?fp p:wikiPageUsesTemplate t:infobox_language_family;p:name ?fn.optional{?fp p:iso ?fc}.FILTER (regex(?lc,"^(' . join('|', keys %$metadata) . ')$"))}ORDER BY ?lc';
+                my $uri = $endpoint . uri_escape($query);
+                my @dbp;
+
+                # TODO asynch? parallelize? use post_json_req()?
+                if (my $json = get $uri) {
+                    # TODO try/catch with eval in case $json does not contain legal JSON
                     my $data = $g_js->decode($json);
                     if (exists $data->{results} && exists $data->{results}->{bindings}) {
                         foreach my $b (@{$data->{results}->{bindings}}) {
@@ -693,34 +768,42 @@ sub do_lang {
                                 fn => $b->{fn}->{value} };
                             push @dbp, $l;
                         }
-                    } else {
-                        use Data::Dumper; print STDERR '** no DBpedia: ', Dumper $data;
-                    }
-                } else { print STDERR "** DBpedia fail code 2\n"; }
-            } else { print STDERR "** DBpedia fail code 1\n"; }
+                    } else { print STDERR "** no results or bindings iin DBpedia JSON result\n"; }
+                } else { print STDERR "** DBpedia HTTP get failed\n"; }
 
-            foreach my $l (%$metadata) {
-                my $eng = metadata_to_english($l, $metadata->{$l}, \@dbp);
-                if ($eng) {
-                    $ok = 1;
-                    push @resps, $eng;
+                foreach my $l (keys %$metadata) {
+                    my $eng = metadata_to_english($l, $metadata->{$l}, \@dbp);
+                    if ($eng) {
+                        $ok = 1;
+                        push @resps, $eng;
+                    }
                 }
+            } else {
+                # TODO only report which sources were actually checked since sitmatrix, wikt, langmetadata, etc may be broken individually
+                @resps = ($input . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.');
             }
         } else {
-            # TODO only report which sources were actually checked since sitmatrix, wikt, langmetadata, etc may be broken individually
-            @resps = ($input . ': can\'t find it in ISO 639-3, WikiMedia Sitematrix, or en.wiktionary language templates.');
+            if ($@) {
+                @resps = ('something went wrong: ' . $@);
+            } else {
+                @resps = ($input . ': can\'t find it in en.wiktionary language templates.');
+            }
         }
-    } else {
-        if ($@) {
-            @resps = ('something went wrong: ' . $@);
+    } else { print STDERR "** $http_code : $err\n"; }
+
+    for my $resp (@resps) {
+        # TODO generic yield privmsg sub
+        print STDERR "** $resp\n";
+        if (defined $langreq->{channel} && defined $langreq->{nick}) {
+            $g_irc->yield( privmsg => $langreq->{channel}, $langreq->{nick} . ': ' . $resp );
+        } elsif (defined $langreq->{channel}) {
+            $g_irc->yield( privmsg => $langreq->{channel}, $resp );
+        } elsif (defined $langreq->{nick}) {
+            $g_irc->yield( privmsg => $langreq->{nick}, $resp );
         } else {
-            @resps = ($input . ': can\'t find it in en.wiktionary language templates.');
+            print STDERR "** gf no channel or nick impossible!\n";
         }
     }
-
-    hippbotlog('lang', $input, $ok);
-
-    return \@resps;
 }
 
 sub metadata_to_english {
@@ -957,6 +1040,7 @@ sub do_toc {
     my $json = get $uri . $page;
 
     if ($json) {
+        # TODO try/catch with eval in case $json does not contain legal JSON
         $data = $g_js->decode($json);
 
         if (exists $data->{parse} && exists $data->{parse}->{sections}) {
@@ -1054,7 +1138,7 @@ sub on_gf_response {
     # Google
     if ($http_response->decoded_content =~ /Results <b>1<\/b> - <b>\d+<\/b> of about <b>([0-9,]+)<\/b> for <b>/) {
     # Bing
-    #if ($http_response->decoded_content =~ /<span class="sb_count" id="count">1-\d+ van ([0-9\.]+) resultaten<\/span>/) {
+    #if ($http_response->decoded_content =~ /<span class="sb_count" id="count">1-\d+ van ([0-9\.]+) resultaten<\/span>/) { # }
         $fight->{terms}->{$term} = [$1, $1];
         # Google
         $fight->{terms}->{$term}->[1] =~ s/,//g;
@@ -1336,6 +1420,7 @@ sub on_sugg_response {
 
         if ($http_response->is_success) {
             if ($json) {
+                # TODO try/catch with eval in case $json does not contain legal JSON
                 my $res = $g_js->decode($json);
                 if (exists $res->{query} && exists $res->{query}->{searchinfo} && exists $res->{query}->{searchinfo}->{suggestion}) {
                     ++ $fight->{dym}->{$res->{query}->{searchinfo}->{suggestion}};
@@ -1351,6 +1436,7 @@ sub on_sugg_response {
             if ($json) {
                 # the logic of utf8() is reversed for decode() but correct for encode()!!
                 my $confusing = ! utf8::is_utf8($json);
+                # TODO try/catch with eval in case $json does not contain legal JSON
                 my $res = $g_js->utf8($confusing)->decode($json);  # works with charset => 'UTF-8' above
 
                 if (exists $res->{prev}) {
@@ -1379,6 +1465,7 @@ sub on_sugg_response {
             my %col;
 
             if ($json) {
+                # TODO try/catch with eval in case $json does not contain legal JSON
                 my $res = $g_js->decode($json);
 
                 if (exists $res->{query} && exists $res->{query}->{pages}) {
