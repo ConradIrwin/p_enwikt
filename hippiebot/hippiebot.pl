@@ -36,6 +36,9 @@ use Unicode::UCD 'charscript';
 use URI::Escape;
 use XML::Parser::Lite;
 
+# debugging
+my $USE_WIKI_TEMPLATES = 1;
+
 binmode STDOUT, ':utf8';
 binmode STDERR, ':utf8';
 
@@ -169,9 +172,10 @@ $g_js = $g_js->utf8 if $LWP::Simple::VERSION < 5.827;
 
 # ISO 639-3 to ISO 639-1 mapping: 3-letter to 2-letter
 my %g_three2one;
+my %g_twob2one;
 my %g_name2code;
 {
-    my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&fields=iso3,isoname,n';
+    my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&fields=iso3,iso2b,isoname,n';
 
     unless ($json) {
         print STDERR "** couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
@@ -181,6 +185,7 @@ my %g_name2code;
 
         while (my ($k, $v) = each %$data) {
             $g_three2one{$v->{iso3}} = $k if (exists $v->{iso3});
+            $g_twob2one{$v->{iso2b}} = $k if (exists $v->{iso2b});
             my @a;
             if (ref($v->{n}) eq 'ARRAY') {
                 push @a, @{$v->{n}};
@@ -321,15 +326,26 @@ sub on_json_response {
     my $ref;
     my $err;
 
+    print STDERR "** on_json_response code: ", $http_response->code, ", message: ", $http_response->message, "\n";
+
     if ($http_response->is_success) {
+        print STDERR "** json http success\n";
         my $json = $http_response->decoded_content;
-        eval {
-            # the logic of utf8() is reversed for decode() but correct for encode()!!
-            $ref = $g_js->utf8(!utf8::is_utf8($json))->decode($json);
-        };
-        if ($@) {
-            $err = $@;
+        if ($json ne '') {
+            eval {
+                # the logic of utf8() is reversed for decode() but correct for encode()!!
+                $ref = $g_js->utf8(!utf8::is_utf8($json))->decode($json);
+            };
+            if ($@) {
+                $err = $@;
+                print "** JSON can't decode this string: <<$json>>\n";
+            }
+        } else {
+            $err = 'empty JSON string';
         }
+    } else {
+        print STDERR "** json http no success\n";
+        $err = $http_response->message;
     }
 
     $kernel->yield( $heap->{json}->[$_id]->{response_state} => $heap->{json}->[$_id]->{id}, $http_response->code, $ref, $err );
@@ -685,7 +701,8 @@ sub do_command {
 # TODO ASYNCHRONOUS
 sub do_lang {
     my ( $kernel, $heap, $channel, $nick, $input ) = @_;
-    my $codes = $input;
+    #my $codes = $input;
+    my %codes = ( $input => 1 );
 
     my $newuri = 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=';
 
@@ -695,7 +712,11 @@ sub do_lang {
     
     # XXX not available if langmetadata failed at bot startup
     if (exists $g_three2one{$input}) {
-        $codes .= ',' . $g_three2one{$input};
+        #$codes .= ',' . $g_three2one{$input};
+        ++ $codes{ $g_three2one{$input} };
+    } elsif (exists $g_twob2one{$input}) {
+        #$codes .= ',' . $g_twob2one{$input};
+        ++ $codes{ $g_twob2one{$input} };
     }
 
     # try to ignore case and diacritics
@@ -706,16 +727,19 @@ sub do_lang {
 
     # XXX not available if langmetadata failed at bot startup
     if (exists $g_name2code{$nname}) {
-        $codes .= ',' . join(',', @{$g_name2code{$nname}});
+        #$codes .= ',' . join(',', @{$g_name2code{$nname}});
+        ++ $codes{ $_ } for @{$g_name2code{$nname}};
     }
 
     # now look up all the codes at once on the language metadata server
 
-    my $fulluri = $newuri . $codes;
+    #my $fulluri = $newuri . $codes;
+    my $fulluri = $newuri . join(',' , keys %codes);
 
     my $id = $g_lang_id ++;
 
-    $heap->{lang}->[$id] = { channel => $channel, nick => $nick, input => $input, codes => $codes };
+    #$heap->{lang}->[$id] = { channel => $channel, nick => $nick, input => $input, codes => $codes };
+    $heap->{lang}->[$id] = { channel => $channel, nick => $nick, input => $input, codes => join(',' , keys %codes) };
 
     post_json_req(
         $kernel, $heap,
@@ -731,21 +755,43 @@ sub on_lang_response {
 
     my $langreq = $heap->{lang}->[$id];
     my $input = $langreq->{input};
-    my $codes = $langreq->{codes};
+    #my $codes = $langreq->{codes};
 
     my $ok = 0;
     my @resps;
 
     if (my $metadata = $ref) {
         # add code=>name pairs extracted from the Wiktionary templates
-        if (exists $g_enwikt{$input}) {
-            $metadata->{$input}->{enwiktname} = $g_enwikt{$input};
+        # XXX disabled because "lang fra" can produce an output for "fra" as well as one for "fr, fra"
+        # XXX $metadata will only have the 2-letter code as a key if both exist but this can force it
+        # XXX to have both. the same probably goes for ISO 639-2 B codes
+        if ($USE_WIKI_TEMPLATES) {
+            my $key = $input;
+
+            for my $iso2 (keys %$metadata) {
+                if (exists $metadata->{$iso2}->{iso3} && $metadata->{$iso2}->{iso3} eq $input) {
+#print STDERR "iso3 $input -> $iso2\n";
+                    $key = $iso2;
+                } elsif (exists $metadata->{$iso2}->{iso2b} && $metadata->{$iso2}->{iso2b} eq $input) {
+#print STDERR "iso2b $input -> $iso2\n";
+                    $key = $iso2;
+                }
+            }
+
+            if (exists $g_enwikt{$input}) {
+                $metadata->{$key}->{enwiktname} = $g_enwikt{$input};
+            }
+
+            # add code=>name pairs extracted from the Wikipedia templates
+            if (exists $g_enwiki{$key}) {
+                $metadata->{$key}->{enwikiname} = $g_enwiki{$input};
+            }
         }
 
-        # add code=>name pairs extracted from the Wikipedia templates
-        if (exists $g_enwiki{$input}) {
-            $metadata->{$input}->{enwikiname} = $g_enwiki{$input};
-        }
+        # can we parallelize the next call with the previous call?  
+        # the above logic can add an $input key to $metadata
+        # we send the keys of $metadata to DBpedia but might we know these values before?
+        # why do we get the keys from $metadata rather than just using $codes? (other than | vs , separator)
 
         if ($metadata) {
             if (scalar keys %$metadata) {
@@ -770,8 +816,11 @@ sub on_lang_response {
                     } else { print STDERR "** no results or bindings iin DBpedia JSON result\n"; }
                 } else { print STDERR "** DBpedia HTTP get failed\n"; }
 
+#use Data::Dumper; print '##>> ', Dumper { codes => $codes, metadata => $metadata };
+#use Data::Dumper; print '##>> ', Dumper { metadata => $metadata };
                 foreach my $l (keys %$metadata) {
                     my $eng = metadata_to_english($l, $metadata->{$l}, \@dbp);
+                    #use Data::Dumper; print Dumper { $l => $eng };
                     if ($eng) {
                         $ok = 1;
                         push @resps, $eng;
@@ -788,7 +837,7 @@ sub on_lang_response {
                 @resps = ($input . ': can\'t find it in en.wiktionary language templates.');
             }
         }
-    } else { print STDERR "** $http_code : $err\n"; }
+    } else { print STDERR "** $http_code : ", defined $err ? $err : '{no err msg)', "\n"; }
 
     for my $resp (@resps) {
         # TODO generic yield privmsg sub
@@ -823,11 +872,14 @@ sub metadata_to_english {
     if ($l->{isoname}) {
         $names{$l->{isoname}} = 1;
     }
-    if ($l->{enwiktname}) {
-        $names{$l->{enwiktname}} = 1;
-    }
-    if ($l->{enwikiname}) {
-        $names{$l->{enwikiname}} = 1;
+    # XXX disabled because "lang fra" can produce an output for "fra" as well as one for "fr, fra"
+    if ($USE_WIKI_TEMPLATES) {
+        if ($l->{enwiktname}) {
+            $names{$l->{enwiktname}} = 1;
+        }
+        if ($l->{enwikiname}) {
+            $names{$l->{enwikiname}} = 1;
+        }
     }
     if ($l->{nn}) {
         if ($l->{nn} =~ /^(.*?) ?\/ ?(.*?)$/) { # bpy/cr/cu/iu/ku/pih/sh/sr/tt/ug
@@ -846,6 +898,9 @@ sub metadata_to_english {
 
         if (exists $l->{iso3}) {
             $resp .= ', ' . $l->{iso3};
+        }
+        if (exists $l->{iso2b}) {
+            $resp .= ', ' . $l->{iso2b};
         }
         $resp .= ': '. join '; ', keys %names;
 
@@ -890,14 +945,21 @@ sub metadata_to_english {
             }
         }
         $resp .= '.';
-
+#use Data::Dumper; print STDERR ">>> ", Dumper $l;
         $resp .= ' ';
         if (exists $l->{isoscope}) {
             $resp .= 'It\'s in ISO';
         } elsif (exists $l->{wm}) {
             $resp .= 'It\'s a WikiMedia extension to ISO';
-        } else {
+        # XXX disabled because the metadata server uses only normalized language codes as keys
+        # XXX but the wikis may also include one or both of the 3-letter codes
+        } elsif ($USE_WIKI_TEMPLATES && exists $l->{enwiktname}) {
             $resp .= 'It\'s an en.wiktionary extension to ISO';
+        } elsif ($USE_WIKI_TEMPLATES && exists $l->{enwikiname}) {
+            $resp .= 'It\'s an en.wikipedia extension to ISO';
+        } else {
+            # hard-coded addittional info from langmetadata server
+            $resp .= 'It\'s an extension to ISO';
         }
         if (exists $l->{hw}) {
             $resp .= ' and has its own Wiktionary';
@@ -1026,7 +1088,7 @@ sub do_random {
     return $resp;
 }
 
-# TODO ASYNCHRONOUS ?
+# ASYNCHRONOUS
 sub do_toc {
     my ( $kernel, $heap, $channel, $nick, $page ) = @_;
 
@@ -1405,9 +1467,7 @@ sub do_suggest {
 
 # handle an incoming suggest response
 sub on_sugg_response {
-    #my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
     my ($kernel, $heap, $request_packet, $response_packet) = @_[KERNEL, HEAP, ARG0, ARG1];
-#use Data::Dumper; print 'SUGG: HEAP ', $heap, ' ', Dumper $heap;
 
     my $sugg_req_id     = $request_packet->[1];
     my $http_response = $response_packet->[0];
@@ -1415,10 +1475,10 @@ sub on_sugg_response {
     $sugg_req_id =~ /^(\d+)\.(.*)-(.*)-(.*)$/;
     my ($sugg_id, $site, $lang, $term) = ($1, $2, $3, $4);
     my $fight = $g_suggests{$sugg_id};
-#$heap->{sugg}->[$sugg_id]++;
+
     # PARSE $http_response->decoded_content
 
-    # used by eash suggestor
+    # used by each suggestor
     my $json;
     my @a;
 
