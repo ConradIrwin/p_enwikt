@@ -49,7 +49,7 @@ our($opt_c, $opt_d, $opt_F, $opt_n);
 getopts('c:dFn:');
 
 # XXX move to %g_hippiebot or heap?
-my $g_tick_num = 0;
+my $g_feed_tick = 0;
 
 # set a useragent and timeout for LWP::Simple
 $ua->agent('hippiebot');
@@ -238,6 +238,10 @@ my @g_feeds = (
 );
 
 # XXX move to %g_hippiebot or heap?
+my $g_siteinfo_delay = defined $opt_d ? 15 : 5 * 60;
+my @g_siteinfo_ignore_fields = defined $opt_d ? ( 'time' ) : ( 'time', 'dbversion' );
+
+# XXX move to %g_hippiebot or heap?
 my @g_kia_queue;
 my @g_cb_queue;
 
@@ -266,6 +270,8 @@ POE::Session->create(
         irc_socketerr     => \&on_socketerr,
         feed_timer        => \&on_feed_timer,
         feed_response     => \&on_feed_response,
+        siteinfo_timer    => \&on_siteinfo_timer,
+        siteinfo_response => \&on_siteinfo_response,
         json_response     => \&on_json_response,
         gf_response       => \&on_gf_response,
         lang_response     => \&on_lang_response,
@@ -279,8 +285,9 @@ POE::Session->create(
 sub bot_start {
     my $kernel = $_[KERNEL];
 
-    # feed stuff
+    # timers
     $kernel->delay( feed_timer => $g_feed_delay );
+    $kernel->delay( siteinfo_timer => $g_siteinfo_delay );
 
     # IRC stuff
     $g_irc->yield( register => "all" );
@@ -326,10 +333,9 @@ sub on_json_response {
     my $ref;
     my $err;
 
-    print STDERR "** on_json_response code: ", $http_response->code, ", message: ", $http_response->message, "\n";
+    #print STDERR "** on_json_response code: ", $http_response->code, ", message: ", $http_response->message, "\n";
 
     if ($http_response->is_success) {
-        print STDERR "** json http success\n";
         my $json = $http_response->decoded_content;
         if ($json ne '') {
             eval {
@@ -344,7 +350,7 @@ sub on_json_response {
             $err = 'empty JSON string';
         }
     } else {
-        print STDERR "** json http no success\n";
+        #print STDERR "** json http no success\n";
         $err = $http_response->message;
     }
 
@@ -528,7 +534,7 @@ sub on_bot_addressed {
 sub on_feed_timer {
     my $kernel = $_[KERNEL];
 
-    my $feednum = $g_tick_num % scalar @g_feeds;
+    my $feednum = $g_feed_tick % scalar @g_feeds;
     my $feed = $g_feeds[ $feednum ];
 
     $kernel->post(
@@ -540,9 +546,7 @@ sub on_feed_timer {
 
 # handle an incoming RSS/Atom feed
 sub on_feed_response {
-    #my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
     my ($kernel, $heap, $request_packet, $response_packet) = @_[KERNEL, HEAP, ARG0, ARG1];
-#use Data::Dumper; print 'FEED: HEAP ', $heap, ' ', Dumper $heap;
     my $feednum       = $request_packet->[1];
     my $http_response = $response_packet->[0];
 
@@ -553,12 +557,12 @@ sub on_feed_response {
 
     # unless we're just starting up report feeds which start or stop working
     if ($is_working != $was_working) {
-        my $msg = '** feed \'' . $feed->{name} . '\' is ';
+        my $msg = 'feed \'' . $feed->{name} . '\' is ';
         $msg .= 'now ' unless $was_working == -1;
         $msg .= ($is_working ? 'working' : 'down');
         $msg .= ' at startup' if $was_working == -1;
 
-        print STDERR "$msg\n";
+        print STDERR "** $msg\n";
         $g_irc->yield( privmsg => '#hippiebot', $msg );
     }
 
@@ -607,15 +611,14 @@ sub on_feed_response {
             # after that, all *new* items
 
             if (exists $feed->{initial_check_done}) {
-#$i == 0 && print STDERR $feed->{name}, " has been checked before\n";
                 $announce = ! exists $feed->{seen}->{$t};
             } else {
-$i == 0 && print STDERR $feed->{name}, " initial feed check\n";
                 $announce = $i == 0 && !$opt_F;
             }
-#print STDERR 'announce: ', $announce, ' ', $feed->{name}, '[', $i, "]\n";
 
-            $opt_d && !$opt_F && print STDERR 'tick: ', $g_tick_num, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
+            if ($opt_d && !$opt_F) {
+                print STDERR 'tick: ', $g_feed_tick, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
+            }
 
             # TODO should each channel should have its own feed delay when one bot can join multiple channels
             foreach my $ch (@{$g_hippiebot{channels}}) {
@@ -628,7 +631,72 @@ $i == 0 && print STDERR $feed->{name}, " initial feed check\n";
     }
 
     $kernel->delay( feed_timer => $g_feed_delay );
-    ++ $g_tick_num;
+    ++ $g_feed_tick;
+}
+
+# Time to check the siteinfo
+sub on_siteinfo_timer {
+    my ($kernel, $heap) = @_[KERNEL, HEAP];
+
+    my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=query&meta=siteinfo';
+
+    post_json_req(
+        $kernel, $heap,
+        'siteinfo_response',
+        GET ($uri));
+
+    return undef;
+}
+
+# handle an incoming siteinfo
+sub on_siteinfo_response {
+    my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
+
+    my $was_working = defined $heap->{siteinfo}->{working} ? $heap->{siteinfo}->{working} : -1;
+    my $is_working = $heap->{siteinfo}->{working} = defined $ref;
+
+    # unless we're just starting up report when siteinfo starts or stops working
+    if ($is_working != $was_working) {
+        my $msg = 'siteinfo is ';
+        $msg .= 'now ' unless $was_working == -1;
+        $msg .= ($is_working ? 'working' : 'down');
+        $msg .= ' at startup' if $was_working == -1;
+
+        unless ($is_working) {
+            $msg .= " ($http_code: $err)";
+        }
+        print STDERR "** $msg\n";
+        $g_irc->yield( privmsg => '#hippiebot', $msg );
+    }
+
+    if ($is_working) {
+        my $info;
+        if (defined $ref->{query} && defined $ref->{query}->{general}) {
+            while (my ($k, $v) = each %{$ref->{query}->{general}}) {
+                if (!defined $heap->{siteinfo}->{$k}) {
+                    unless ($was_working == -1) {
+                        $info = "siteinfo has a new field '$k'";
+                        print STDERR "** $info\n";
+                        $g_irc->yield( privmsg => '#hippiebot', $info );
+                    }
+                } elsif ($heap->{siteinfo}->{$k} ne $v) {
+                    unless (grep $_ eq $k, @g_siteinfo_ignore_fields) {
+                        $info = "siteinfo field '$k' changed value from '$heap->{siteinfo}->{$k}' to '$v'";
+                        print STDERR "** $info\n";
+
+                        foreach my $ch (@{$g_hippiebot{channels}}) {
+                            $g_irc->yield( privmsg => $ch, $info );
+                        }
+                    }
+                }
+                $heap->{siteinfo}->{$k} = $v;
+            }
+        } else {
+            print STDERR "** siteinfo response does not contain query/general\n";
+        }
+    }
+
+    $kernel->delay( siteinfo_timer => $g_siteinfo_delay );
 }
 
 # The bot has received a disconnection message.
@@ -701,7 +769,6 @@ sub do_command {
 # TODO ASYNCHRONOUS
 sub do_lang {
     my ( $kernel, $heap, $channel, $nick, $input ) = @_;
-    #my $codes = $input;
     my %codes = ( $input => 1 );
 
     my $newuri = 'http://toolserver.org/~hippietrail/langmetadata.fcgi?langs=';
@@ -712,10 +779,8 @@ sub do_lang {
     
     # XXX not available if langmetadata failed at bot startup
     if (exists $g_three2one{$input}) {
-        #$codes .= ',' . $g_three2one{$input};
         ++ $codes{ $g_three2one{$input} };
     } elsif (exists $g_twob2one{$input}) {
-        #$codes .= ',' . $g_twob2one{$input};
         ++ $codes{ $g_twob2one{$input} };
     }
 
@@ -727,18 +792,15 @@ sub do_lang {
 
     # XXX not available if langmetadata failed at bot startup
     if (exists $g_name2code{$nname}) {
-        #$codes .= ',' . join(',', @{$g_name2code{$nname}});
         ++ $codes{ $_ } for @{$g_name2code{$nname}};
     }
 
     # now look up all the codes at once on the language metadata server
 
-    #my $fulluri = $newuri . $codes;
     my $fulluri = $newuri . join(',' , keys %codes);
 
     my $id = $g_lang_id ++;
 
-    #$heap->{lang}->[$id] = { channel => $channel, nick => $nick, input => $input, codes => $codes };
     $heap->{lang}->[$id] = { channel => $channel, nick => $nick, input => $input, codes => join(',' , keys %codes) };
 
     post_json_req(
@@ -762,18 +824,14 @@ sub on_lang_response {
 
     if (my $metadata = $ref) {
         # add code=>name pairs extracted from the Wiktionary templates
-        # XXX disabled because "lang fra" can produce an output for "fra" as well as one for "fr, fra"
-        # XXX $metadata will only have the 2-letter code as a key if both exist but this can force it
-        # XXX to have both. the same probably goes for ISO 639-2 B codes
+        # normalize ISO 639-2 B and ISO 639-3 -> ISO 639-2
         if ($USE_WIKI_TEMPLATES) {
             my $key = $input;
 
             for my $iso2 (keys %$metadata) {
                 if (exists $metadata->{$iso2}->{iso3} && $metadata->{$iso2}->{iso3} eq $input) {
-#print STDERR "iso3 $input -> $iso2\n";
                     $key = $iso2;
                 } elsif (exists $metadata->{$iso2}->{iso2b} && $metadata->{$iso2}->{iso2b} eq $input) {
-#print STDERR "iso2b $input -> $iso2\n";
                     $key = $iso2;
                 }
             }
