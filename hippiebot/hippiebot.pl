@@ -242,6 +242,9 @@ my $g_siteinfo_delay = defined $opt_d ? 15 : 5 * 60;
 my @g_siteinfo_ignore_fields = defined $opt_d ? ( 'time' ) : ( 'time', 'dbversion' );
 
 # XXX move to %g_hippiebot or heap?
+my $g_ts_ping_delay = 77; # how often to ping the metadata server to keep it alive
+
+# XXX move to %g_hippiebot or heap?
 my @g_kia_queue;
 my @g_cb_queue;
 
@@ -270,9 +273,11 @@ POE::Session->create(
         irc_socketerr     => \&on_socketerr,
         feed_timer        => \&on_feed_timer,
         feed_response     => \&on_feed_response,
+        json_response     => \&on_json_response,
         siteinfo_timer    => \&on_siteinfo_timer,
         siteinfo_response => \&on_siteinfo_response,
-        json_response     => \&on_json_response,
+        ts_ping_timer     => \&on_ts_ping_timer,
+        ts_ping_response  => \&on_ts_ping_response,
         gf_response       => \&on_gf_response,
         lang_response     => \&on_lang_response,
         sugg_response     => \&on_sugg_response,
@@ -288,6 +293,7 @@ sub bot_start {
     # timers
     $kernel->delay( feed_timer => $g_feed_delay );
     $kernel->delay( siteinfo_timer => $g_siteinfo_delay );
+    $kernel->delay( ts_ping_timer => 2 );
 
     # IRC stuff
     $g_irc->yield( register => "all" );
@@ -699,6 +705,46 @@ sub on_siteinfo_response {
     $kernel->delay( siteinfo_timer => $g_siteinfo_delay );
 }
 
+# Time to ping the toolserver to keep fcgi stuff alive
+sub on_ts_ping_timer {
+    my ($kernel, $heap) = @_[KERNEL, HEAP];
+
+    #my $uri = 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&ping=1';
+    my $uri = 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&has=syz&ping=1';
+
+    post_json_req(
+        $kernel, $heap,
+        'ts_ping_response',
+        GET ($uri));
+
+    return undef;
+}
+
+# handle an incoming ts_ping
+sub on_ts_ping_response {
+    my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
+
+    #use Data::Dumper; print Dumper { id => $id, http_code => $http_code, ref => $ref, err => $err };
+
+    if (defined $ref) {
+        if (exists $ref->{pong}) {
+            if ($ref->{pong} == 0) {
+                my $info = "language metadata server has restarted";
+                print STDERR "** $info\n";
+                $g_irc->yield( privmsg => '#hippiebot', $info );
+            } else {
+                print STDERR "** metadata: pong $ref->{pong}\n";
+            }
+        } else {
+            print STDERR "** metadata: no pong\n";
+        }
+    } else {
+        print STDERR "** metadata: no data\n";
+    }
+
+    $kernel->delay( ts_ping_timer => $g_ts_ping_delay );
+}
+
 # The bot has received a disconnection message.
 sub on_disconnected {
     my ( $kernel, $server ) = @_[ KERNEL, ARG0 ];
@@ -874,8 +920,6 @@ sub on_lang_response {
                     } else { print STDERR "** no results or bindings iin DBpedia JSON result\n"; }
                 } else { print STDERR "** DBpedia HTTP get failed\n"; }
 
-#use Data::Dumper; print '##>> ', Dumper { codes => $codes, metadata => $metadata };
-#use Data::Dumper; print '##>> ', Dumper { metadata => $metadata };
                 foreach my $l (keys %$metadata) {
                     my $eng = metadata_to_english($l, $metadata->{$l}, \@dbp);
                     #use Data::Dumper; print Dumper { $l => $eng };
@@ -930,7 +974,6 @@ sub metadata_to_english {
     if ($l->{isoname}) {
         $names{$l->{isoname}} = 1;
     }
-    # XXX disabled because "lang fra" can produce an output for "fra" as well as one for "fr, fra"
     if ($USE_WIKI_TEMPLATES) {
         if ($l->{enwiktname}) {
             $names{$l->{enwiktname}} = 1;
@@ -1003,14 +1046,11 @@ sub metadata_to_english {
             }
         }
         $resp .= '.';
-#use Data::Dumper; print STDERR ">>> ", Dumper $l;
         $resp .= ' ';
         if (exists $l->{isoscope}) {
             $resp .= 'It\'s in ISO';
         } elsif (exists $l->{wm}) {
             $resp .= 'It\'s a WikiMedia extension to ISO';
-        # XXX disabled because the metadata server uses only normalized language codes as keys
-        # XXX but the wikis may also include one or both of the 3-letter codes
         } elsif ($USE_WIKI_TEMPLATES && exists $l->{enwiktname}) {
             $resp .= 'It\'s an en.wiktionary extension to ISO';
         } elsif ($USE_WIKI_TEMPLATES && exists $l->{enwikiname}) {
@@ -1262,9 +1302,7 @@ sub do_gf {
 
 # handle an incoming googlefight response
 sub on_gf_response {
-    #my ($kernel, $request_packet, $response_packet) = @_[KERNEL, ARG0, ARG1];
     my ($kernel, $heap, $request_packet, $response_packet) = @_[KERNEL, HEAP, ARG0, ARG1];
-#use Data::Dumper; print 'GF: HEAP ', $heap, ' ', Dumper $heap;
 
     my $gf_req_id     = $request_packet->[1];
     my $http_response = $response_packet->[0];
@@ -1273,7 +1311,6 @@ sub on_gf_response {
     my ($gf_id, $term) = ($1, $2);
     my $fight = $g_googlefights{$gf_id};    # TODO use heap
 
-#$heap->{gf}->[$gf_id] ++;
     # parse html
     # Google
     if ($http_response->decoded_content =~ /Results <b>1<\/b> - <b>\d+<\/b> of about <b>([0-9,]+)<\/b> for <b>/) {
