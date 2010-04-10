@@ -26,6 +26,9 @@ use MediaWiki::API;
 
 my $scriptmode = 'cli';
 
+# counts # of requests handled since script last (re)started
+my $g_pong = 0;
+
 # hw    has wiktionary      MediaWiki specific
 # sc    script(s)           ISO 15924
 # wsc   Wiktionary script   EnglishWiktionary specific
@@ -450,49 +453,51 @@ while (FCGI::accept >= 0) {
     my %opts = ('format' => 'json');
     
     # get command line or cgi args
-    CliOrCgiOptions(\%opts, qw{format langs fields callback has match sort}); 
+    CliOrCgiOptions(\%opts, qw{format langs fields callback has match sort ping}); 
         
-    my %langs = map { $_ => 1 } split ',', $opts{langs} if ($opts{langs});
-    my %fields = map { $_ => 1 } split ',', $opts{fields} if ($opts{fields});
+    unless ($opts{ping}) {
+        my %langs = map { $_ => 1 } split ',', $opts{langs} if ($opts{langs});
+        my %fields = map { $_ => 1 } split ',', $opts{fields} if ($opts{fields});
 
-    # build the subset of the metadata to serve
-    my $get_all_langs = (scalar keys %langs == 0);
-    my $get_all_fields = (scalar keys %fields == 0);
+        # build the subset of the metadata to serve
+        my $get_all_langs = (scalar keys %langs == 0);
+        my $get_all_fields = (scalar keys %fields == 0);
 
-    # each language
-    foreach my $l (keys %langsuperset) {
-        my %row;
-        my $emit = 1;
+        # each language
+        foreach my $l (keys %langsuperset) {
+            my %row;
+            my $emit = 1;
 
-        foreach my $set ($metadata, $wmmetadata, $enwiktmetadata) {
-            foreach my $f (keys %{$set->{$l}}) {
-                $row{$f} = $set->{$l}->{$f};
-            }            
-        }
-    
-        if ($opts{match}) {
-            $emit = 0;
-            my ($k, $v) = split ':', $opts{match};
-            if (ref($row{$k}) eq 'ARRAY' && grep($_ eq $v, @{$row{$k}})) {
-                $emit = 1;
-            } elsif ($metadata_dtd{$k} eq 'bool' && $row{$k} == $v) {
-                $emit = 1;
-            } elsif ($row{$k} eq $v) {
-                $emit = 1;
+            foreach my $set ($metadata, $wmmetadata, $enwiktmetadata) {
+                foreach my $f (keys %{$set->{$l}}) {
+                    $row{$f} = $set->{$l}->{$f};
+                }            
             }
-        }
+        
+            if ($opts{match}) {
+                $emit = 0;
+                my ($k, $v) = split ':', $opts{match};
+                if (ref($row{$k}) eq 'ARRAY' && grep($_ eq $v, @{$row{$k}})) {
+                    $emit = 1;
+                } elsif ($metadata_dtd{$k} eq 'bool' && $row{$k} == $v) {
+                    $emit = 1;
+                } elsif ($row{$k} eq $v) {
+                    $emit = 1;
+                }
+            }
 
-        elsif ($opts{has}) {
-            $emit = exists $row{$opts{has}};
-        }
+            elsif ($opts{has}) {
+                $emit = exists $row{$opts{has}};
+            }
 
-        if ($emit) {
-            if ($get_all_langs || exists $langs{$l}) {
-                # each field
-                foreach my $f (keys %metadata_dtd) {
-                    if ($get_all_fields || exists $fields{$f}) {
-                        if (exists $row{$f}) {
-                            $custommetadata{$l}->{$f} = $row{$f};
+            if ($emit) {
+                if ($get_all_langs || exists $langs{$l}) {
+                    # each field
+                    foreach my $f (keys %metadata_dtd) {
+                        if ($get_all_fields || exists $fields{$f}) {
+                            if (exists $row{$f}) {
+                                $custommetadata{$l}->{$f} = $row{$f};
+                            }
                         }
                     }
                 }
@@ -500,7 +505,7 @@ while (FCGI::accept >= 0) {
         }
     }
  
-    dumpresults(\%custommetadata, $opts{format}, $opts{callback}, $opts{sort});
+    dumpresults(\%custommetadata, $opts{format}, $opts{callback}, $opts{sort}, $opts{ping});
 }
 
 exit;
@@ -529,6 +534,7 @@ sub dumpresults {
     my $format = shift;
     my $callback = shift;
     our $sort = shift;      # XXX "my" doesn't work with fcgi!
+    my $ping = shift;
 
     # we must output the HTTP headers to STDOUT before anything else
 	binmode(STDOUT, 'utf8');
@@ -539,6 +545,8 @@ sub dumpresults {
     our $indent = 0;
     our $fmt = $format =~ /fm$/ ? 1 : 0;
     our $qot = $format =~ /^json/ ? 1 : 0;
+
+    $r->{pong} = $g_pong++ if $ping;
 
     $callback && print $callback, '(';
     dumpresults_json($r);
