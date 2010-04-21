@@ -44,9 +44,9 @@ binmode STDERR, ':utf8';
 
 print STDERR "** running on $^O / ", hostname, "\n";
 
-our($opt_c, $opt_d, $opt_F, $opt_n);
+our($opt_c, $opt_d, $opt_F, $opt_n, $opt_s);
 
-getopts('c:dFn:');
+getopts('c:dFn:s:');
 
 # XXX move to %g_hippiebot or heap?
 my $g_feed_tick = 0;
@@ -207,10 +207,12 @@ my %g_name2code;
 my %g_hippiebot = (
     owner => [ 'hippietrail', 'hippietrailwork' ],
     botnick => 'hippiebot',
+    server => 'irc.freenode.net',
     channels => [ '#wiktionary', '#Wiktionarydev', '#hippiebot' ],
 );
 
 $g_hippiebot{botnick} = $opt_n if defined $opt_n;
+$g_hippiebot{server} = $opt_s if defined $opt_s;
 $g_hippiebot{channels} = [ $opt_c ] if defined $opt_c;
 
 # TODO should be per-channel when one bot can be on multiple channels
@@ -302,7 +304,7 @@ sub bot_start {
           { Nick     => $g_hippiebot{botnick},
             Username => 'hippiebot',
             Ircname  => 'POE::Component::IRC hippietrail bot',
-            Server   => 'irc.freenode.net',
+            Server   => $g_hippiebot{server},
             Port     => '6667',
           }
     );
