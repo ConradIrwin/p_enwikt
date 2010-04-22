@@ -308,6 +308,7 @@ my $metadata = {
     xlc=>{sc=>'Lyci',n=>'Lycian'},
     xld=>{sc=>'Lydi',n=>'Lydian'},
     xlu=>{sc=>'Xsux',n=>'Luwian'},
+    xno=>{sc=>'Latn',g=>'mf',pl=>1,n=>'Anglo-Norman'},
     xrr=>{sc=>'Ital',n=>'Raetic'},
     xst=>{sc=>'Ethi',n=>'Silt\'e'},
     xum=>{sc=>'Ital',n=>'Umbrian'},
