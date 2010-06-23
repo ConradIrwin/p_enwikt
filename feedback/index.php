@@ -133,7 +133,7 @@ function display_results( $wiki, $week ) {
 	$fbs = array_map( 'extract_feedback', $lines );
 	$result = array_count_values( $fbs );
 	$table = array_map( 'format_result', array_keys( $result ), array_values( $result ) );
-	arsort( $table );
+	arsort( $table, SORT_NUMERIC );
 	$table = implode( $table );
 	$raw = "<a href=\"results/$wiki/$week\">raw</a>";
 	$week = "<b>$week</b>";
