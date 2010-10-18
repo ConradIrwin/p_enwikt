@@ -359,6 +359,7 @@ sub template_inside_infobox {
 
             my $n = $p->content_twine->[1]->content_twine->[0];
 
+            # FIXME 18/10/2010: Use of uninitialized value $n in substitution (s///)
             $n =~ s/^\s*(.*?)\s*$/$1/s;
 
             $n = 'part' if $n eq '';
