@@ -31,6 +31,7 @@ my $usethumb = 1;
 
 my %thumbindex;
 
+# TODO should be in config file
 #my $dumppath = "E:\\Archives\\wiktdump\\";
 #my $dumppath = "D:\\wiktdump\\";
 my $dumppath = '/mnt/user-store/';
@@ -57,10 +58,10 @@ unless (open DFH) {
 		#print STDERR "no dump file (xx-wikt-*.xml)\n";
 		die "no dump file";
 	}
-	$OFH = $dumppath.$dumplang.$date.'-off.raw',
-	open OFH or die "no raw offset file (*-off.raw)";
-	binmode OFH;
 }
+$OFH = $dumppath.$dumplang.$date.'-off.raw';
+open OFH or die "no raw offset file (*-off.raw)";
+binmode OFH;
 
 my $args = shift or die "no term to search for" unless ($opt_r);
 
@@ -186,19 +187,21 @@ sub getarticle {
 
 	$index_s < $haystacksize || die "sorted index $index_s too big";
 
+    # *-all-idx.raw
 	seek(IFH, $index_s * 4, 0) || die "sorted index seek error";
 	read(IFH, $index_r, 4);
 	$index_r = unpack 'I', $index_r;
 
 	$index_r < $haystacksize || die "raw index $index_r too big (sorted index $index_s)";
 
+    # *-off.raw
 	seek(OFH, $index_r * 4, 0) || die "raw index seek error";
 	read(OFH, $offset, 4);
 	$offset = unpack 'I', $offset;
 
 	$offset < -s DFH || die "article offset $offset too big";
 
-	seek(DFH, $offset, 0) || die "article eek error";
+	seek(DFH, $offset, 0) || die "article seek error";
 
 	my $l;
 	while (1) {
@@ -15633,12 +15636,14 @@ sub gettitle {
 
 	$index_s < $haystacksize || die "sorted index $index_s too big";
 
+    # *-all-idx.raw
 	seek(IFH, $index_s * 4, 0) || die "sorted index seek error";
 	read(IFH, $index_r, 4);
 	$index_r = unpack 'I', $index_r;
 
 	$index_r < $haystacksize || die "raw index $index_r too big (sorted index $index_s)";
 
+    # *-all-off.raw
 	seek(TOFH, $index_r * 4, 0) || die "raw index seek error";
 	read(TOFH, $offset, 4);
 	$offset = unpack 'I', $offset;

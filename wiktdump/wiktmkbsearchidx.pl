@@ -8,19 +8,28 @@ binmode STDOUT;
 our($NFH) = shift;
 open NFH or die "no name file";
 
-my $limit = 0;
+my $opt_d = 0;
+my $limit = $opt_d ? 20 : 0;
 my $prog = 10000;
 
 my $title;
-my $idx;
-for ($idx = 0; <NFH>; ++$idx) {
+my $oof = 0;
+
+for (my $idx = 0; <NFH>; ++$idx) {
     last if $limit && $idx >= $limit;
-    my $eoll = chomp;                           # eol length for LF or CRLF
+    chomp;
 
     $title = $_;
 
-    print pack 'I', (tell) - (length) - $eoll;	# dump file byte offset -2 for CRLF on dos/win
+    my $nof = (tell);
+    if ($opt_d) {
+        print STDERR $oof, " : '$title'\n";
+    } else {
+        print pack 'I', $oof;
+    }
 
     # progress display
-    print STDERR "$idx: $title\n" if ($idx % $prog == 0 || $idx == $limit - 1);
+    $opt_d || print STDERR "$idx: $title\n" if ($idx % $prog == 0 || $idx == $limit - 1);
+
+    $oof = $nof;
 }
