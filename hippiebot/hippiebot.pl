@@ -175,28 +175,35 @@ my %g_three2one;
 my %g_twob2one;
 my %g_name2code;
 {
+    my $data;
     my $json = get 'http://toolserver.org/~hippietrail/langmetadata.fcgi?format=json&fields=iso3,iso2b,isoname,n';
 
     unless ($json) {
         print STDERR "** couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
     } else {
         # TODO try/catch with eval in case $json does not contain legal JSON
-        my $data = $g_js->decode($json);
-
-        while (my ($k, $v) = each %$data) {
-            $g_three2one{$v->{iso3}} = $k if (exists $v->{iso3});
-            $g_twob2one{$v->{iso2b}} = $k if (exists $v->{iso2b});
-            my @a;
-            if (ref($v->{n}) eq 'ARRAY') {
-                push @a, @{$v->{n}};
-            } elsif (exists $v->{n}) {
-                push @a, $v->{n};
-            }
-            push @a, $v->{isoname} if (exists $v->{isoname});
-            foreach (@a) {
-                my $n = normalize_lang_name($_);
-                if (!exists $g_name2code{$n} || !grep ($n eq $k, @{$g_name2code{$n}})) {
-                    push @{$g_name2code{$n}}, $k;
+        eval {
+            # the logic of utf8() is reversed for decode() but correct for encode()!!
+            $data = $g_js->decode($json);
+        };
+        if ($@) {
+            print STDERR "** langmetadata returned invalid JSON\n";
+        } else {
+            while (my ($k, $v) = each %$data) {
+                $g_three2one{$v->{iso3}} = $k if (exists $v->{iso3});
+                $g_twob2one{$v->{iso2b}} = $k if (exists $v->{iso2b});
+                my @a;
+                if (ref($v->{n}) eq 'ARRAY') {
+                    push @a, @{$v->{n}};
+                } elsif (exists $v->{n}) {
+                    push @a, $v->{n};
+                }
+                push @a, $v->{isoname} if (exists $v->{isoname});
+                foreach (@a) {
+                    my $n = normalize_lang_name($_);
+                    if (!exists $g_name2code{$n} || !grep ($n eq $k, @{$g_name2code{$n}})) {
+                        push @{$g_name2code{$n}}, $k;
+                    }
                 }
             }
         }
@@ -242,6 +249,8 @@ my @g_feeds = (
 # XXX move to %g_hippiebot or heap?
 my $g_siteinfo_delay = defined $opt_d ? 15 : 5 * 60;
 my @g_siteinfo_ignore_fields = defined $opt_d ? ( 'time' ) : ( 'time', 'dbversion' );
+
+my %g_siteinfo_cache;
 
 # XXX move to %g_hippiebot or heap?
 my $g_ts_ping_delay = 77; # how often to ping the metadata server to keep it alive
@@ -677,27 +686,43 @@ sub on_siteinfo_response {
         $g_irc->yield( privmsg => '#hippiebot', $msg );
     }
 
+    # report any changes to siteinfo fields
     if ($is_working) {
         my $info;
         if (defined $ref->{query} && defined $ref->{query}->{general}) {
-            while (my ($k, $v) = each %{$ref->{query}->{general}}) {
-                if (!defined $heap->{siteinfo}->{$k}) {
-                    unless ($was_working == -1) {
-                        $info = "siteinfo has a new field '$k'";
-                        print STDERR "** $info\n";
-                        $g_irc->yield( privmsg => '#hippiebot', $info );
-                    }
-                } elsif ($heap->{siteinfo}->{$k} ne $v) {
-                    unless (grep $_ eq $k, @g_siteinfo_ignore_fields) {
-                        $info = "siteinfo field '$k' changed value from '$heap->{siteinfo}->{$k}' to '$v'";
-                        print STDERR "** $info\n";
+            while (my ($field, $newval) = each %{$ref->{query}->{general}}) {
+                # // operator requires Perl 5.10 or greater
+                my $oldval = $heap->{siteinfo}->{prev}->{$field} // '(undefined)';
 
-                        foreach my $ch (@{$g_hippiebot{channels}}) {
-                            $g_irc->yield( privmsg => $ch, $info );
+                my $changekey = join("\t", ($field, $oldval, $newval));
+
+                if ($oldval ne $newval) {
+                    if (defined $heap->{siteinfo}->{changecache}->{$changekey}) {
+                        print STDERR "** seen this change before '$changekey'\n";
+
+                    } else {
+                        if ($oldval eq '(undefined)') {
+                            unless ($was_working == -1) {
+                                $info = "siteinfo has a new field '$field'";
+                                print STDERR "** $info\n";
+                                $g_irc->yield( privmsg => '#hippiebot', $info );
+                            }
+                        } else {
+                            unless (grep $_ eq $field, @g_siteinfo_ignore_fields) {
+                                $info = "siteinfo field '$field' changed value from '$oldval' to '$newval'";
+                                print STDERR "** $info\n";
+
+                                foreach my $ch (@{$g_hippiebot{channels}}) {
+                                    $g_irc->yield( privmsg => $ch, $info );
+                                }
+                            }
                         }
+
+                        print STDERR "** caching new change '$changekey'\n";
+                        $heap->{siteinfo}->{changecache}->{$changekey} = 1;
                     }
                 }
-                $heap->{siteinfo}->{$k} = $v;
+                $heap->{siteinfo}->{prev}->{$field} = $newval;
             }
         } else {
             print STDERR "** siteinfo response does not contain query/general\n";
@@ -1614,13 +1639,20 @@ sub on_sugg_response {
                 # the logic of utf8() is reversed for decode() but correct for encode()!!
                 my $confusing = ! utf8::is_utf8($json);
                 # TODO try/catch with eval in case $json does not contain legal JSON
-                my $res = $g_js->utf8($confusing)->decode($json);  # works with charset => 'UTF-8' above
-
-                if (exists $res->{prev}) {
-                    $fight->{dym}->{$res->{prev}->[0]} += 0.5;
-                }
-                if (exists $res->{next}) {
-                    $fight->{dym}->{$res->{next}->[0]} += 0.5;
+                my $res;
+                eval {
+                    # the logic of utf8() is reversed for decode() but correct for encode()!!
+                    $res = $g_js->utf8($confusing)->decode($json);  # works with charset => 'UTF-8' above
+                };
+                if ($@) {
+                    print STDERR "** suggest/nearby got invalid JSON\n";
+                } else {
+                    if (exists $res->{prev}) {
+                        $fight->{dym}->{$res->{prev}->[0]} += 0.5;
+                    }
+                    if (exists $res->{next}) {
+                        $fight->{dym}->{$res->{next}->[0]} += 0.5;
+                    }
                 }
             }
         } else {
