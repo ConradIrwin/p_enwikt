@@ -803,6 +803,7 @@ sub on_socketerr {
 # addressed to the bot specifically, or /msg'd to the bot
 sub do_command {
     my ( $kernel, $heap, $channel, $nick, $msg ) = @_;
+    my $site;   # XXX just for gf / bf commands
     my $force;
     my $args;
     my $resps = [];
@@ -823,8 +824,8 @@ sub do_command {
     }
 
     # asynchronous commands
-    elsif ( ($force, $args) = $msg =~ /^gf(!)?\s+(.+)\s*$/ ) {
-        my $resp = do_gf($kernel, $channel, $nick, $force, $args);
+    elsif ( ($site, $force, $args) = $msg =~ /^([bg])f(!)?\s+(.+)\s*$/ ) {
+        my $resp = do_gf($kernel, $channel, $nick, $site, $force, $args);
         $resps->[0] = $resp if defined $resp;
     } elsif ( ($args) = $msg =~ /^!suggest\s+(.+)\s*$/ ) {
         my $resp = do_suggest($kernel, $channel, $nick, $args);
@@ -1274,6 +1275,7 @@ sub do_gf {
     my $kernel = shift;
     my $channel = shift;
     my $nick = shift;
+    my $site = shift;
     my $force = shift;
     my $args= shift;
     my $ok = 0;
@@ -1309,11 +1311,8 @@ sub do_gf {
             $kernel->post(
                 'my-http', 'request',
                 'gf_response',
-                # Google
-                GET ('http://www.google.com.au/search?q=' . $term),
-                # Bing
-                #GET ('http://www.bing.com/search?q=' . $term),
-                $g_googlefight_id . '.' . $term);
+                GET ('http://www.' . ($site eq 'g' ? 'google' : 'bing') . '.com/search?q=' . $term),
+                $g_googlefight_id . '.' . $site . '.' . $term);
         }
 
         # TODO use heap
@@ -1332,20 +1331,17 @@ sub on_gf_response {
     my $gf_req_id     = $request_packet->[1];
     my $http_response = $response_packet->[0];
 
-    $gf_req_id =~ /^(\d+)\.(.*)$/;
-    my ($gf_id, $term) = ($1, $2);
+    $gf_req_id =~ /^(\d+)\.(.*?)\.(.*?)$/;
+    my ($gf_id, $site, $term) = ($1, $2, $3);
     my $fight = $g_googlefights{$gf_id};    # TODO use heap
 
     # parse html
-    # Google
-    if ($http_response->decoded_content =~ /<div id=resultStats>\D* ([0-9,.]+) \D*<nobr>/) {
-    # Bing
-    #if ($http_response->decoded_content =~ /<span class="sb_count" id="count">1-\d+ van ([0-9\.]+) resultaten<\/span>/) { # }
+    my $pattern = $site eq 'g'
+        ? '<div id=resultStats>\D* ([0-9,.]+) \D*<nobr>'
+        : '<span class="sb_count" id="count">1-\d+ van ([0-9\.]+) resultaten<\/span>';
+    if ($http_response->decoded_content =~ /$pattern/) { # }
         $fight->{terms}->{$term} = [$1, $1];
-        # Google
-        $fight->{terms}->{$term}->[1] =~ s/,//g;
-        # Bing
-        #$fight->{terms}->{$term}->[1] =~ s/\.//g;
+        $fight->{terms}->{$term}->[1] =~ s/[,.]//g;
     } else {
         $fight->{terms}->{$term} = [0, 0];
     }
