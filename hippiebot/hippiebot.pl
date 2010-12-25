@@ -698,7 +698,7 @@ sub on_siteinfo_response {
 
                 if ($oldval ne $newval) {
                     if (defined $heap->{siteinfo}->{changecache}->{$changekey}) {
-                        print STDERR "** seen this change before '$changekey'\n";
+                        #print STDERR "** seen this change before '$changekey'\n";
 
                     } else {
                         if ($oldval eq '(undefined)') {
@@ -718,7 +718,7 @@ sub on_siteinfo_response {
                             }
                         }
 
-                        print STDERR "** caching new change '$changekey'\n";
+                        #print STDERR "** caching new change '$changekey'\n";
                         $heap->{siteinfo}->{changecache}->{$changekey} = 1;
                     }
                 }
@@ -751,14 +751,12 @@ sub on_ts_ping_timer {
 sub on_ts_ping_response {
     my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
 
-    #use Data::Dumper; print Dumper { id => $id, http_code => $http_code, ref => $ref, err => $err };
-
     if (defined $ref) {
         if (exists $ref->{pong}) {
             if ($ref->{pong} == 0) {
-                my $info = "language metadata server has restarted";
-                print STDERR "** $info\n";
-                $g_irc->yield( privmsg => '#hippiebot', $info );
+                #my $info = "language metadata server has restarted";
+                #print STDERR "** $info\n";
+                #$g_irc->yield( privmsg => '#hippiebot', $info );
             } else {
                 print STDERR "** metadata: pong $ref->{pong}\n";
             }
@@ -1340,7 +1338,7 @@ sub on_gf_response {
 
     # parse html
     # Google
-    if ($http_response->decoded_content =~ /Results <b>1<\/b> - <b>\d+<\/b> of about <b>([0-9,]+)<\/b> for <b>/) {
+    if ($http_response->decoded_content =~ /<div id=resultStats>\D* ([0-9,.]+) \D*<nobr>/) {
     # Bing
     #if ($http_response->decoded_content =~ /<span class="sb_count" id="count">1-\d+ van ([0-9\.]+) resultaten<\/span>/) { # }
         $fight->{terms}->{$term} = [$1, $1];
