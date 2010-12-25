@@ -145,15 +145,14 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
     emit_scripts($page->{id}, [ keys %script]);
 
     # we have the title so now we need to check the namespace and look for language headings
+    # TODO if there is a <redirect /> element it is next after <title> and <id> (and before <revision>)
     while (<DFH>) {
+        $page->{redir} = 1 if (/<redirect \/>/);
         last if (/<text /);
     }
 
     $l = $_;
-    my $isfirst = 1;
     my $islast = 0;
-    my $firstwikitextline;
-
     my $pagehead = undef;
 
     # each line of <text>
@@ -165,22 +164,19 @@ for (my $page_i = 0; read(IFH, $v, 4); ++$page_i) {
             $l = substr($l, 0, -8);
             $islast = 1;
         }
-        $l = decode_entities($l);
-        if ($isfirst) {
-            $firstwikitextline = $l;
-            chomp $firstwikitextline;
 
-            # TODO use the new redirect element in the dump XML format
-            # TODO so far we only handle redirects in the article namespace
-            if ($firstwikitextline =~ /^#\s*redirect\s*\[\[(.*?)\]\]/i) {
-                id_for_lang('_Redirect');
-
-                # TODO emit_redirect
-
-                last;
-            }
-            $isfirst = 0;
+        if ($page->{redir}) {
+            id_for_lang('_Redirect');
+        
+            # TODO emit_redirect
+            push @{$page->{entries}}, { 'lang' => $lang2id{'_Redirect'} };
+        
+            emit_page($page);
+        
+            last;
         }
+
+        $l = decode_entities($l);
 
         # have we come to a heading?
         if ($l =~ /^(=+)\s*([^=]*?)\s*(=+)\s*$/) {
@@ -277,6 +273,8 @@ sub emit_head {
 sub emit_title {
     my ($id, $title, $key) = @_;
 
+    # TODO this causes the binary sortkeys to be stored as UTF-8 in the database!
+    # TODO the titles are UTF-8 but not the sortkeys - should they even be in the same file??
     if (open(TFH, '>>:encoding(utf8)', "__titles.txt")) {
         print TFH "$id\t$title\t$key\n";
         close(TFH);
