@@ -10,7 +10,7 @@ for i in range(1,5):
     posses.add('noun %s' % i)
     posses.add('verb %s' % i)
 
-re_language = re.compile(r"^(==\s*(?:\[\[\s*)?([^[=\s].*[^=\s\]])(?:\s*\]\])?\s*==)$", re.M)
+re_language = re.compile(r"^(==\s*(?:\[\[\s*)?([^[=\s].*[^=\s\]])(?:\s*\]\])?\s*==)\s*$", re.M)
 
 def is_part_of_speech(title):
     """
@@ -61,7 +61,7 @@ def unique_section(heading, text):
     """
     Assume there is only one section with a given title on the page, and return it
     """
-    base_re = r"^(=+\s*(?:\[\[\s*)?(?:%s)(?:\s*\]\])?\s*=+)$" 
+    base_re = r"^(=+\s*(?:\[\[\s*)?(?:%s)(?:\s*\]\])?\s*=+\s*)$" 
     re_this_heading = re.compile(base_re % heading, re.M)
     re_any_heading = re.compile(base_re % "[^[=\s].*[^=\s\]]", re.M)
     
@@ -82,7 +82,7 @@ def all_sections(heading, text):
     try:
         yield unique_section(heading, text)
     except NotUniqueException, e:
-        base_re = r"^(=+\s*(?:\[\[\s*)?(?:%s)(?:\s*\]\])?\s*=+)$" 
+        base_re = r"^(=+\s*(?:\[\[\s*)?(?:%s)(?:\s*\]\])?\s*=+\s*)$" 
         re_any_heading = re.compile(base_re % "[^[=\s].*[^=\s\]]", re.M)
         split = e.lst
         for x in range(0,len(split),3):
@@ -96,7 +96,7 @@ def all_subsections(text):
     """
         Get all the subsections of a language section (ignoring nesting)
     """
-    re_any_heading = re.compile(r"^(=+\s*(?:\[\[\s*)?([^\[=\s].*[^=\s\]])(?:\s*\]\])?\s*=+)$", re.M)
+    re_any_heading = re.compile(r"^(=+\s*(?:\[\[\s*)?([^\[=\s].*[^=\s\]])(?:\s*\]\])?\s*=+\s*)$", re.M)
     split = re_any_heading.split(text)
 
     if len(split) == 1:
@@ -109,9 +109,9 @@ def all_subsections(text):
 
 def all_headings(text, preserve_links=False):
     if preserve_links:
-        base_re = r"^(=+\s*((?:\[\[\s*)?%s(?:\s*\]\])?)\s*=+)$" 
+        base_re = r"^(=+\s*((?:\[\[\s*)?%s(?:\s*\]\])?)\s*=+\s*)$" 
     else:
-        base_re = r"^(=+\s*(?:\[\[\s*)?(%s)(?:\s*\]\])?\s*=+)$" 
+        base_re = r"^(=+\s*(?:\[\[\s*)?(%s)(?:\s*\]\])?\s*=+\s*)$" 
     re_any_heading = re.compile(base_re % "[^[=\s].*[^=\s\]]", re.M)
     
     for m in re_any_heading.findall(text):
