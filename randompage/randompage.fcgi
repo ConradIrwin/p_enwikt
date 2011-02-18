@@ -168,6 +168,10 @@ sub dumpresults {
     }
 
     if ($scriptmode eq 'cgi') {
+        # XXX FGCI.pm <= 0.68 behaviour
+        # XXX we're outputting UTF-8 but FCGI doesn't have a way to set binmode utf8
+        # TODO what's the correct way to turn a UTF-8 string into a raw byte string?
+        use bytes;
         print CGI->new->redirect(-uri=>$url, -status=>303);
     } else {
         print "How about the nice $langname word '$word' ";
