@@ -2,7 +2,6 @@
 
 # nearbypages <language name> <term>
 
-#use utf8;
 use strict;
 
 use CGI;
@@ -14,9 +13,6 @@ use MediaWiki::API;
 use POSIX;
 use Unicode::Collate;
 use URI::Escape;
-
-#binmode STDIN, ':utf8';
-#binmode STDOUT, ':utf8';
 
 my $scriptmode = 'cli';
 
@@ -427,7 +423,10 @@ sub dumpresults {
     our $sort = shift;      # XXX "my" doesn't work with fcgi!
 
     # we must output the HTTP headers to STDOUT before anything else
-	binmode(STDOUT, 'utf8');
+
+    # XXX newer versions of the FCGI module use FCGI::Stream instead of STDOUT
+    # XXX but there's no way to set it to UTF-8 mode!
+    binmode(STDOUT, ':utf8');
     $scriptmode eq 'cgi' && print "Content-type: text/plain; charset=UTF-8\n\n";
 
     # XXX "my" doesn't work with fcgi!
@@ -435,57 +434,61 @@ sub dumpresults {
     our $indent = 0;
     our $fmt = $format =~ /fm$/ ? 1 : 0;
     our $qot = $format =~ /^json/ ? 1 : 0;
+    our $res = '';
 
-    $callback && print $callback, '(';
+    $callback && ($res .= $callback . '(');
     dumpresults_json($r);
-    $callback && print ')';
+    $callback && ($res .= ')');
 
     sub dumpresults_json {
         my $r = shift;
         my $lhs = shift;
 
         if (ref($r) eq 'ARRAY') {
-            print '[';
+            $res .= '[';
             for (my $i = 0; $i < scalar @$r; ++$i) {
-                $i && print ',';
-                $i && $fmt && print ' ';
+                $i && ($res .= ',');
+                $i && $fmt && ($res .= ' ');
                 dumpresults_json($r->[$i]);
             }
-            print ']';
+            $res .= ']';
         } elsif (ref($r) eq 'HASH') {
-            print "{";
-            $fmt && print "\n";
+            $res .= "{";
+            $fmt && ($res .= "\n");
             ++$indent;
             my $i = 0;
             for my $h ($sort ? sort keys %$r : keys %$r) {
-                $i && print ",";
-                $i++ && $fmt && print "\n";
+                $i && ($res .= ",");
+                $i++ && $fmt && ($res .= "\n");
                 my $k = $h;
                 if ($qot || $h !~ /^[a-z]+$/) {
                     $k = '"' . $h . '"';
                 }
-                $fmt && print '  ' x $indent;
-                print $k, ':';
-                $fmt && print ' ';
+                $fmt && ($res .= '  ' x $indent);
+                $res .= $k . ':';
+                $fmt && ($res .= ' ');
                 dumpresults_json($r->{$h}, $h);
             }
-            $fmt && print "\n", '  ' x --$indent;
-            print '}';
+            $fmt && ($res .= "\n" . '  ' x --$indent);
+            $res .= '}';
         # XXX don't use \d here or foreign digits will be unquoted
         } elsif ($r =~ /^-?[0-9]+$/ && $r !~ /^0[0-9]+$/) {
             #if ($metadata_dtd{$lhs} eq 'bool') {
-            #    print $r ? 'true' : 'false';
+            #    $res .= $r ? 'true' : 'false';
             #} else {
-                print $r;
+                $res .= $r;
             #}
         } else {
             $r =~ s/\\/\\\\/g;
             $r =~ s/"/\\"/g;
             # escape control characters
             $r =~ s/([\x00-\x1f])/sprintf '\u%04x', ord $1/eg;
-            print '"', $r, '"';
+            $res .= '"' . $r . '"';
         }
     }
+    # XXX workaround Perl FCGI bug https://rt.cpan.org/Public/Bug/Display.html?id=62524
+    utf8::encode($res);
+    print STDOUT $res;
 }
 
 # TODO "seq" param should be used here as in positive results right?
