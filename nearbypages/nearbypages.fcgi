@@ -115,7 +115,7 @@ while (FCGI::accept >= 0) {
             $cli_retval = nearby_lang_locale_wordlist($opts{langname}, $opts{term}, $numprev, $numnext, $results, $opts{callback});
         }
 
-        dumpresults($results, 'json', $opts{callback});
+        dumpresults($results, 'jsonfm', $opts{callback});
     }
 }
 
@@ -132,8 +132,7 @@ sub nearby_panlang_uca {
 
     my $retval = -1;    # fail by default
 
-    # TODO
-    #print STDERR "connecting...\n";
+    # connecting...
     my $dbh = DBI->connect(
        'DBI:mysql:' .
             'database=u_hippietrail;' .
@@ -144,7 +143,7 @@ sub nearby_panlang_uca {
         );
 
     if ($dbh) {
-        #print STDERR "connected.\n";
+        # connected
 
         my $title_to_seq = $dbh->prepare('SELECT seq FROM seq INNER JOIN title USING (page_id) WHERE page_title = ?');
         if ($title_to_seq) {
@@ -154,10 +153,13 @@ sub nearby_panlang_uca {
                     my $seq_to_titles = $dbh->prepare('SELECT page_title FROM seq INNER JOIN title USING (page_id) WHERE seq >= ? AND seq <= ?');
                     if ($seq_to_titles) {
                         if ($seq_to_titles->execute($seq - $numprev, $seq + $numnext)) {
+
                             $results->{locale} = 'UCA';
                             my $which = 'prev';
                             my $i = 0;
                             while (my ($t) = $seq_to_titles->fetchrow_array()) {
+                                # XXX prevent double UTF-8 encoding
+                                utf8::decode($t);
                                 if ($i++ == $numprev) {
                                     $results->{exists} = 1;
                                     $which = 'next';
@@ -166,6 +168,7 @@ sub nearby_panlang_uca {
                                 }
                             }
                             $retval = 0;
+
                         } else {
                             print STDERR "execute 'seq to titles' failed\n";
                         }
@@ -173,8 +176,7 @@ sub nearby_panlang_uca {
                         print STDERR "failed to prepare 'seq to titles' statement\n";
                     }
                 } else {
-                    #binmode STDERR, ':utf8';
-                    #print STDERR "didn't fetch seq for '$inputterm'\n";
+                    # didn't fetch seq for $inputterm
                     my $sortkey = $uca->getSortKey($inputterm);
 
                     my ($prev, $next) = bsearch_db($dbh, $inputterm, $sortkey);
@@ -182,10 +184,13 @@ sub nearby_panlang_uca {
                     my $seq_to_titles = $dbh->prepare('SELECT page_title FROM seq INNER JOIN title USING (page_id) WHERE seq >= ? AND seq <= ?');
                     if ($seq_to_titles) {
                         if ($seq_to_titles->execute($prev - $numprev + 1, $next + $numnext - 1)) {
+
                             $results->{locale} = 'UCA';
                             my $which = 'prev';
                             my $i = 0;
                             while (my ($t) = $seq_to_titles->fetchrow_array()) {
+                                # XXX prevent double UTF-8 encoding
+                                utf8::decode($t);
                                 if ($i++ == $numprev) {
                                     $results->{exists} = 0;
                                     $which = 'next';
@@ -193,6 +198,7 @@ sub nearby_panlang_uca {
                                 push @{$results->{$which}}, $t;
                             }
                             $retval = 0;
+
                         } else {
                             print STDERR "execute 'seq to titles' failed\n";
                         }
