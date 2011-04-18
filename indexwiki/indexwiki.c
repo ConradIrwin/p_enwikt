@@ -66,12 +66,16 @@ int _tmain(int argc, _TCHAR* argv[])
 	_TCHAR *dumppath = NULL;	// allows Unicode paths
 	_TCHAR *indexpath = NULL;	// allows Unicode paths
 
-	//fprintf(stderr, "** size of seek_type is %d\n", sizeof(seek_type));
+#ifdef _WIN32
+	_setmode(_fileno(stderr), _O_U16TEXT);
+#endif
+
+	//_ftprintf(stderr, _T("** size of seek_type is %d\n"), sizeof(seek_type));
 
 	if (parse_args(argc, argv, &opt_d, &opt_h, &dumplang, &dumpproj, &dumpdate)) {
 
 		if (read_config(&dumppath, &indexpath)) {
-			//if (opt_d) fprintf(stderr, "** read config OK\n");
+			//if (opt_d) _ftprintf(stderr, _T("** read config OK\n"));
 
 			// create filename strings
 			_TCHAR *dump_filename = alloc_stprintf(_T("%s%s%s-%s-pages-%s.xml"), dumppath, dumplang, dumpproj, dumpdate, opt_h ? _T("meta-history") : _T("articles"));
@@ -84,6 +88,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 				// open input file
 				FILE *dump_file = _tfopen(dump_filename, _T("rb"));					// crlf translation would interfere with ftell()
+				//MessageBoxW(NULL, dump_filename, L"hippietrail", MB_OK);
 
 				_ftprintf(stderr, _T("%s : %s\n"), dump_filename, dump_file ? _T("yes") : _T("no"));
 
@@ -209,14 +214,14 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 					dump_version = atof(p1+10);
 
 					if (opt_d) {
-						fprintf(stderr, "***** dumpfile xml version '%0.01f' *****\n", dump_version);
+						_ftprintf(stderr, _T("***** dumpfile xml version '%0.01f' *****\n"), dump_version);
 
 						if (dump_version < 0.25) {
-							fprintf(stderr, "** earlier than version 0.3, no <redirect> element support\n");
+							_ftprintf(stderr, _T("** earlier than version 0.3, no <redirect> element support\n"));
 						} else if (dump_version > 0.35) {
-							fprintf(stderr, "** version 0.4 or later, <redirect> element support\n");
+							_ftprintf(stderr, _T("** version 0.4 or later, <redirect> element support\n"));
 						} else {
-							fprintf(stderr, "** version 0.3, may or may not have <redirect> elements\n");
+							_ftprintf(stderr, _T("** version 0.3, may or may not have <redirect> elements\n"));
 						}
 					}
 				}
@@ -275,14 +280,28 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 				fwrite(&roff, sizeof roff, 1, off_raw_file);
 
 				// windows text files should have \r\n - unix should have just \n
+#ifdef _WIN32
 				fprintf(all_txt_file, "%s\r\n", title);
+#else
+				fprintf(all_txt_file, "%s\n", title);
+#endif
 
 				fwrite(&told, sizeof told, 1, all_off_raw_file);
 
 				if (show_progress) {
-					if (opt_d)
-						fprintf(stderr, "%d (pid %d:rid %d) : 0x%016llx (%llu) : 0x%08x (%u) \"%s\" [%d revs]\n",
-							pc, pid, rid, (unsigned long long)poff, (unsigned long long)poff, roff, roff, title, rc);
+					if (opt_d) {
+						const _TCHAR *t;
+#ifdef _WIN32
+						t = _tcsdup_from_A(title);
+#else
+						t = title;
+#endif
+						_ftprintf(stderr, _T("%d (pid %d:rid %d) : 0x%016llx (%llu) : 0x%08x (%u) \"%s\" [%d revs]\n"),
+							pc, pid, rid, (unsigned long long)poff, (unsigned long long)poff, roff, roff, t, rc);
+#ifdef _WIN32
+						free(t);
+#endif
+					}
 					show_progress = 0;
 				}
 
@@ -324,7 +343,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 
 		} else {
 			if (opt_d)
-				fprintf(stderr, "** unknown state '%d'\n", state);
+				_ftprintf(stderr, _T("** unknown state '%d'\n"), state);
 		}
 
 		free(line);
@@ -339,7 +358,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 			all_idx_raw_filename, all_idx_raw_file ? _T("yes") : _T("no"));
 
 		if (all_idx_raw_file) {
-            sort_titles(opt_d, pc, all_txt_file, all_idx_raw_file);
+			sort_titles(opt_d, pc, all_txt_file, all_idx_raw_file);
 		} /* if ( ... output files ... ) */
 
 		// close output files
@@ -358,10 +377,21 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	}
 
 	if (opt_d) {
-		fprintf(stderr, "%d pages and %d revisions (average %0.02f revisions per page)\n", pc, rc_all, (float)(pc == 0 ? -1 : (float)rc_all / (float)pc));
-		fprintf(stderr, "biggest page offset: 0x%016llx (%llu)\n", (unsigned long long)biggest_poff, (unsigned long long)biggest_poff);
-		fprintf(stderr, "biggest revision offset: 0x%08x (%u) \"%s\"\n", biggest_roff, biggest_roff, biggest_roff_title);
-		fprintf(stderr, "most revisions: %u \"%s\"\n", most_revs, most_revs_title);
+		_ftprintf(stderr, _T("%d pages and %d revisions (average %0.02f revisions per page)\n"), pc, rc_all, (float)(pc == 0 ? -1 : (float)rc_all / (float)pc));
+		_ftprintf(stderr, _T("biggest page offset: 0x%016llx (%llu)\n"), (unsigned long long)biggest_poff, (unsigned long long)biggest_poff);
+#ifdef _WIN32
+		{
+			_TCHAR *a = _tcsdup_from_A(biggest_roff_title);
+			_TCHAR *b = _tcsdup_from_A(most_revs_title);
+			_ftprintf(stderr, _T("biggest revision offset: 0x%08x (%u) \"%s\"\n"), biggest_roff, biggest_roff, a);
+			_ftprintf(stderr, _T("most revisions: %u \"%s\"\n"), most_revs, b);
+			free(a);
+			free(b);
+		}
+#else
+		_ftprintf(stderr, _T("biggest revision offset: 0x%08x (%u) \"%s\"\n"), biggest_roff, biggest_roff, biggest_roff_title);
+		_ftprintf(stderr, _T("most revisions: %u \"%s\"\n"), most_revs, most_revs_title);
+#endif
 	}
 
 	if (biggest_roff_title) free(biggest_roff_title);
@@ -376,8 +406,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 // On Windows the console parameters are UTF-16 though this tool only needs ASCII parameters so far
 int parse_args(const int argc, _TCHAR* argv[], int *opt_d, int *opt_h, _TCHAR **dumplang, _TCHAR **dumpproj, _TCHAR **dumpdate)
 {
-	// usage is pure ASCII
-	const char *usage = "usage: wiktmkrawidx (-d -h) ll pppp... yyyymmdd\n";
+	const _TCHAR *usage = _T("usage: wiktmkrawidx (-d -h) ll pppp... yyyymmdd\n");
 
 	int mandatory_params = 3;
 	int optional_params = 2;
@@ -396,10 +425,10 @@ int parse_args(const int argc, _TCHAR* argv[], int *opt_d, int *opt_h, _TCHAR **
 			for (a = 0; a < optional_params && argv[a + 1][0] == '-'; ++a) {
 
 				if (!_tcscmp(argv[a + 1], _T("-d"))) {
-					fprintf(stderr, "** -d = debug\n");
+					_ftprintf(stderr, _T("** -d = debug\n"));
 					*opt_d = 1;
 				} else if (!_tcscmp(argv[a + 1], _T("-h"))) {
-					fprintf(stderr, "** -h = meta-history\n");
+					_ftprintf(stderr, _T("** -h = meta-history\n"));
 					*opt_h = 1;
 				} else {
 					_ftprintf(stderr, _T("** unknown parameter %d: %s\n"), a, argv[a + 1]);
@@ -408,7 +437,7 @@ int parse_args(const int argc, _TCHAR* argv[], int *opt_d, int *opt_h, _TCHAR **
 
 			}
 		} else {
-			fprintf(stderr, "** no optional params (mandatory = %d, optional <= %d)\n", mandatory_params, optional_params);
+			_ftprintf(stderr, _T("** no optional params (mandatory = %d, optional <= %d)\n"), mandatory_params, optional_params);
 		}
 
 		arg_lang = argv[argc-3];
@@ -432,7 +461,7 @@ int parse_args(const int argc, _TCHAR* argv[], int *opt_d, int *opt_h, _TCHAR **
 	}
 
 	if (!ok)
-		fprintf(stderr, "%s", usage);
+		_ftprintf(stderr, _T("%s"), usage);
 
 	return ok;
 }
@@ -496,7 +525,7 @@ int read_config(_TCHAR **dumppath, _TCHAR **indexpath)
 			char configlineA[256];
 
 			if (fgets(configlineA, sizeof configlineA, config_fp) == NULL) {
-				fprintf(stderr, "config read error\n");
+				_ftprintf(stderr, _T("config read error\n"));
 			} else {
 				if (strchr(configlineA, '\n') || feof(config_fp)) {
 					if (configlineA[strlen(configlineA)-1] == '\n')
@@ -511,7 +540,7 @@ int read_config(_TCHAR **dumppath, _TCHAR **indexpath)
                     // TODO don't return success unless both paths were allcated
 					retval = 1;
 				} else {
-					fprintf(stderr, "config line too long\n");
+					_ftprintf(stderr, _T("config line too long\n"));
 				}
 			}
 
@@ -561,11 +590,11 @@ char *myreadline(FILE *f)
 			if (feof(f)) {
 				// TODO we don't have a way to indicate success
 				// TODO we should only print if opt_d is on
-				fprintf(stderr, "\n** end of file\n");
+				_ftprintf(stderr, _T("\n** end of file\n"));
 			} else if (ferror(f)) {
-				fprintf(stderr, "\n** read error\n");
+				_ftprintf(stderr, _T("\n** read error\n"));
 			} else {
-				fprintf(stderr, "\n** unexpected condition!\n");
+				_ftprintf(stderr, _T("\n** unexpected condition!\n"));
 			}
 			break;
 
@@ -716,21 +745,30 @@ int sort_titles(int opt_d, int page_count, FILE *all_txt_file, FILE *all_idx_raw
 			g_title_array[i] = item->title;
             index[i] = i;
 
-            if (opt_d)
-                if (i % prog == 0 || i == page_count -1)
-                    fprintf(stderr, "%d: %s\n", i, g_title_array[i]);
+            if (opt_d && (i % prog == 0 || i == page_count -1)) {
+                _TCHAR *t;
+#ifdef _WIN32
+                t = _tcsdup_from_A(g_title_array[i]);
+#else
+                t = g_title_array[i];
+#endif
+                _ftprintf(stderr, _T("%d: %s\n"), i, t);
+#ifdef _WIN32
+                free(t);
+#endif
+            }
         }
 
-		fprintf(stderr, "page count was %d, i = %d\n", page_count, i);
+		_ftprintf(stderr, _T("page count was %d, i = %d\n"), page_count, i);
 
-        fprintf(stderr, "sorting index\n");
+        _ftprintf(stderr, _T("sorting index\n"));
 
         qsort((void *)index, i, sizeof(int), comparator);
 
-        fprintf(stderr, "saving index\n");
+        _ftprintf(stderr, _T("saving index\n"));
 		{
 			int x = fwrite(index, sizeof(int), i, all_idx_raw_file);
-			fprintf(stderr, "wrote %d\n", x);
+			_ftprintf(stderr, _T("wrote %d\n"), x);
 		}
     }
 

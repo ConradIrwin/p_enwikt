@@ -34,6 +34,9 @@
 
 # include <tchar.h>
 
+# include <fcntl.h>
+# include <io.h>
+
 # include <Shlobj.h>
 
 // our own cross-platform functions
@@ -52,11 +55,21 @@ typedef __int64		seek_type;
 #else
 
 # if defined(sun) || defined(__sun)
+
 #  if defined(__SVR4) || defined(__svr4__)
+
+    // WikiMedia Toolserver runs Solaris
 #   define HAVE_GOOD_SNPRINTF 1
+
 #  else
 #   error SunOS not supported
 #  endif
+
+# elif defined(__linux)
+
+   // there's really no guarantee asprintf() exists just coz we're on Linux!
+#  define HAVE_ASPRINTF
+
 # endif
 
 // where Windows and *nix function names differ
