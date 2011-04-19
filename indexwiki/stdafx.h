@@ -81,6 +81,7 @@ typedef __int64		seek_type;
 # define _ftprintf	fprintf
 # define _tcscmp     strcmp
 # define _tcsdup		strdup
+# define _tcsstr         strstr
 # define _tfopen     fopen
 # define _tmain      main
 typedef char		_TCHAR;

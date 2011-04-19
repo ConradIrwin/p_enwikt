@@ -2,7 +2,7 @@
 //
 // scans a MediaWiki XML dump file the latest revision of each article
 
-// creates three index files
+// creates four index files
 //	xxx-off.raw
 //		a "seek_type" (64 bit) absolute offset to the start of each <page> line
 //		an "unsigned long" (32 bit) relative offset to the latest <revision> line of the <page> 
@@ -10,20 +10,32 @@
 //		a UTF-8 text file with the page titles in the order found in the dump
 //	xxx-all-off.raw
 //		an "unsigned long" (32 bit) absolute offset to the start of each title in xxx-all.txt
+//	xxx-all-idx.raw
+//		an "unsigned long" (32 bit) index of the position each page title is in after sorting
 //
 // TODO config file should support separate dump and index paths
 // TODO prompt user if output files already exist
 // TODO decide frequency of progress reports from type and size of dump file
 // TODO make it possible to run steps separately
-// TODO how best to handle wikis with odd names such as "mediawikiwiki", the old daily wiktionary dumps, the hitchwiki dumps
 // TODO write metadata to .txt file (number of pages, revs; max page offset, rev offset, number of bits needed for each)
-// TODO instead of strdup()ing each title into its own node, malloc() big chunks of memory as nodes and concatenate lots of titles in them separated only by \0
-// TODO   titles longer than the chunk size need to be special-case'd
-// TODO instead of waiting till we have all the titles then putting them in an array and sorting them, use a tree structure
 // TODO report more factoids: lowest page id, revision id, longest title
 // TODO support dump file coming via a pipe
+// TODO instead of strdup()ing each title into its own node, malloc() big chunks of memory as nodes and concatenate lots of titles in them separated only by \0
+// TODO   titles longer than the chunk size need to be special-case'd
+// TODO instead of waiting till we have all the titles then putting them in an array and sorting them we could use a BST
+// TODO use the minimum number of bytes for offsets, we can adjust the files after we know the maximum offset
 
 #include "stdafx.h"
+
+struct options {
+	int opt_d;				// enable for debugging
+	int opt_h;				// set if indexing a pages-meta-history rather than pages-articles
+
+	_TCHAR *opt_dp;			// dump path
+	_TCHAR *opt_ip;			// index path
+
+	_TCHAR *opt_dfn;		// dump filename
+};
 
 struct stringnode {
 	struct stringnode *next;
@@ -41,8 +53,8 @@ static char **g_title_array;
 int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE *all_txt_file, FILE *all_off_raw_file, const _TCHAR *all_idx_raw_filename);
 int check_range_and_length(const _TCHAR *s, _TCHAR minchar, _TCHAR maxchar, int minlen, int maxlen);
 _TCHAR *get_config_filename(void);
-int parse_args(const int argc, _TCHAR* argv[], int *opt_d, int *opt_h, _TCHAR **dumplang, _TCHAR **dumpproj, _TCHAR **dumpdate);
-int read_config(_TCHAR **dumppath, _TCHAR **indexpath);
+int parse_args(const int argc, _TCHAR* argv[], struct options *, _TCHAR **dumplang, _TCHAR **dumpproj, _TCHAR **dumpdate);
+int read_config(struct options *, _TCHAR **dumppath, _TCHAR **indexpath);
 char *myreadline(FILE *);
 char *alloc_sprintf(const char *fmt, ...);
 _TCHAR *alloc_stprintf(const _TCHAR *fmt, ...);
@@ -50,6 +62,7 @@ _TCHAR *_tcsdup_from_A(const char *);
 const char *strdup_to_list(struct stringnode ***, const char *);
 static int comparator(const void *, const void *);
 int sort_titles(int opt_d, int pc, FILE *all_txt_file, FILE *all_idx_raw_file);
+int bits_needed(unsigned long long);
 
 #ifndef _WIN32
 #define _tcsdup_from_A _tcsdup
@@ -58,96 +71,118 @@ int sort_titles(int opt_d, int pc, FILE *all_txt_file, FILE *all_idx_raw_file);
 // this tool doesn't need any Unicode console parameters
 int _tmain(int argc, _TCHAR* argv[])
 {
-	int opt_d = 0;				// enable for debugging
-	int opt_h = 0;				// set if indexing a pages-meta-history rather than pages-articles
-	_TCHAR *dumplang = NULL;	// wmain means UTF-16 console parameters
-	_TCHAR *dumpproj = NULL;	// wmain means UTF-16 console parameters
-	_TCHAR *dumpdate = NULL;	// wmain means UTF-16 console parameters
-	_TCHAR *dumppath = NULL;	// allows Unicode paths
-	_TCHAR *indexpath = NULL;	// allows Unicode paths
+	struct options opt = {0};
+
+	_TCHAR *dumplang = NULL;
+	_TCHAR *dumpproj = NULL;
+	_TCHAR *dumpdate = NULL;
+	_TCHAR *dumppath = NULL;
+	_TCHAR *indexpath = NULL;
+	
+	_TCHAR *dump_filename = NULL;
+	_TCHAR *off_raw_filename;
+	_TCHAR *all_txt_filename;
+	_TCHAR *all_off_raw_filename;
+	_TCHAR *all_idx_raw_filename;
 
 #ifdef _WIN32
 	_setmode(_fileno(stderr), _O_U16TEXT);
 #endif
 
-	//_ftprintf(stderr, _T("** size of seek_type is %d\n"), sizeof(seek_type));
+	if (parse_args(argc, argv, &opt, &dumplang, &dumpproj, &dumpdate)) {
+		if (opt.opt_dp) dumppath = _tcsdup(opt.opt_dp);
+		if (opt.opt_ip) indexpath = _tcsdup(opt.opt_ip);
 
-	if (parse_args(argc, argv, &opt_d, &opt_h, &dumplang, &dumpproj, &dumpdate)) {
+		if (read_config(&opt, &dumppath, &indexpath)) {
+			if (opt.opt_d) _ftprintf(stderr, _T("** read config OK\n"));
 
-		if (read_config(&dumppath, &indexpath)) {
-			//if (opt_d) _ftprintf(stderr, _T("** read config OK\n"));
+			// these strings must be defined either on the command line or in the config file
+			if (dumppath && indexpath && dumplang && dumpproj && dumpdate) {
+				// create filename strings
+				if (opt.opt_dfn) {
+					dump_filename = alloc_stprintf(_T("%s%s.xml"), dumppath, opt.opt_dfn);
+				} else {
+					dump_filename = alloc_stprintf(_T("%s%s%s-%s-pages-%s.xml"), dumppath, dumplang, dumpproj, dumpdate, opt.opt_h ? _T("meta-history") : _T("articles"));
+				}
 
-			// create filename strings
-			_TCHAR *dump_filename = alloc_stprintf(_T("%s%s%s-%s-pages-%s.xml"), dumppath, dumplang, dumpproj, dumpdate, opt_h ? _T("meta-history") : _T("articles"));
-			_TCHAR *off_raw_filename = alloc_stprintf(_T("%s%s%s-off.raw"), indexpath, dumplang, dumpdate);
-			_TCHAR *all_txt_filename = alloc_stprintf(_T("%s%s%s-all.txt"), indexpath, dumplang, dumpdate);
-			_TCHAR *all_off_raw_filename = alloc_stprintf(_T("%s%s%s-all-off.raw"), indexpath, dumplang, dumpdate);
-			_TCHAR *all_idx_raw_filename = alloc_stprintf(_T("%s%s%s-all-idx.raw"), indexpath, dumplang, dumpdate);
+				// TODO include project or make configurable with a template
+				off_raw_filename = alloc_stprintf(_T("%s%s%s-off.raw"), indexpath, dumplang, dumpdate);
+				all_txt_filename = alloc_stprintf(_T("%s%s%s-all.txt"), indexpath, dumplang, dumpdate);
+				all_off_raw_filename = alloc_stprintf(_T("%s%s%s-all-off.raw"), indexpath, dumplang, dumpdate);
+				all_idx_raw_filename = alloc_stprintf(_T("%s%s%s-all-idx.raw"), indexpath, dumplang, dumpdate);
 
-			if (dump_filename && off_raw_filename && all_txt_filename && all_off_raw_filename) {
+				if (dump_filename && off_raw_filename && all_txt_filename && all_off_raw_filename) {
 
-				// open input file
-				FILE *dump_file = _tfopen(dump_filename, _T("rb"));					// crlf translation would interfere with ftell()
-				//MessageBoxW(NULL, dump_filename, L"hippietrail", MB_OK);
+					// open input file
+					FILE *dump_file = _tfopen(dump_filename, _T("rb"));					// crlf translation would interfere with ftell()
 
-				_ftprintf(stderr, _T("%s : %s\n"), dump_filename, dump_file ? _T("yes") : _T("no"));
+					_ftprintf(stderr, _T("%s : %s\n"), dump_filename, dump_file ? _T("yes") : _T("no"));
 
-				if (dump_file) {
-					// output files
-					FILE *off_raw_file;
-					const _TCHAR *off_raw_state = NULL;
-					FILE *all_txt_file;
-					const _TCHAR *all_txt_state = NULL;
-					FILE *all_off_raw_file;
-					const _TCHAR *all_off_raw_state = NULL;
+					if (dump_file) {
+						// output files
+						FILE *off_raw_file;
+						const _TCHAR *off_raw_state = NULL;
+						FILE *all_txt_file;
+						const _TCHAR *all_txt_state = NULL;
+						FILE *all_off_raw_file;
+						const _TCHAR *all_off_raw_state = NULL;
 
-					// check if output files already exist
-					off_raw_file = _tfopen(off_raw_filename, _T("rb"));
-					all_txt_file = _tfopen(all_txt_filename, _T("rb"));
-					all_off_raw_file = _tfopen(all_off_raw_filename, _T("rb"));
+						// check if output files already exist
+						off_raw_file = _tfopen(off_raw_filename, _T("rb"));
+						all_txt_file = _tfopen(all_txt_filename, _T("rb"));
+						all_off_raw_file = _tfopen(all_off_raw_filename, _T("rb"));
 
-					if (off_raw_file) off_raw_state = _T("overwrite");
-					if (all_txt_file) all_txt_state = _T("overwrite");
-					if (all_off_raw_file) all_off_raw_state = _T("overwrite");
+						if (off_raw_file) off_raw_state = _T("overwrite");
+						if (all_txt_file) all_txt_state = _T("overwrite");
+						if (all_off_raw_file) all_off_raw_state = _T("overwrite");
 
-					// close output files
-					if (off_raw_file) fclose(off_raw_file);
-					if (all_txt_file) fclose(all_txt_file);
-					if (all_off_raw_file) fclose(all_off_raw_file);
+						// close output files
+						if (off_raw_file) fclose(off_raw_file);
+						if (all_txt_file) fclose(all_txt_file);
+						if (all_off_raw_file) fclose(all_off_raw_file);
 
-					// open output files for writing
-					off_raw_file = _tfopen(off_raw_filename, _T("wb"));			// raw binary data
-					all_txt_file = _tfopen(all_txt_filename, _T("wb"));			// crlf translation would interfere with ftell()
-					all_off_raw_file = _tfopen(all_off_raw_filename, _T("wb"));	// raw binary data
+						// open output files for writing
+						off_raw_file = _tfopen(off_raw_filename, _T("wb"));			// raw binary data
+						all_txt_file = _tfopen(all_txt_filename, _T("wb"));			// crlf translation would interfere with ftell()
+						all_off_raw_file = _tfopen(all_off_raw_filename, _T("wb"));	// raw binary data
 
-					if (!off_raw_state) off_raw_state = off_raw_file ? _T("create") : _T("error");
-					if (!all_txt_state) all_txt_state = all_txt_file ? _T("create") : _T("error");
-					if (!all_off_raw_state) all_off_raw_state = all_off_raw_file ? _T("create") : _T("error");
+						if (!off_raw_state) off_raw_state = off_raw_file ? _T("create") : _T("error");
+						if (!all_txt_state) all_txt_state = all_txt_file ? _T("create") : _T("error");
+						if (!all_off_raw_state) all_off_raw_state = all_off_raw_file ? _T("create") : _T("error");
 
-					_ftprintf(stderr, _T("%s : %s\n%s : %s\n%s : %s\n"),
-						off_raw_filename, off_raw_state,
-						all_txt_filename, all_txt_state,
-						all_off_raw_filename, all_off_raw_state);
+						_ftprintf(stderr, _T("%s : %s\n%s : %s\n%s : %s\n"),
+							off_raw_filename, off_raw_state,
+							all_txt_filename, all_txt_state,
+							all_off_raw_filename, all_off_raw_state);
 
-					if (off_raw_file && all_txt_file && all_off_raw_file) {
-						process_dump(opt_d, opt_h, dump_file, off_raw_file, all_txt_file, all_off_raw_file, all_idx_raw_filename);
-					} /* if ( ... output files ... ) */
+						if (off_raw_file && all_txt_file && all_off_raw_file) {
+							process_dump(opt.opt_d, opt.opt_h, dump_file, off_raw_file, all_txt_file, all_off_raw_file, all_idx_raw_filename);
+						} /* if ( ... output files ... ) */
 
-					// close output files
-					if (off_raw_file) fclose(off_raw_file);
-					if (all_txt_file) fclose(all_txt_file);
-					if (all_off_raw_file) fclose(all_off_raw_file);
+						// close output files
+						if (off_raw_file) fclose(off_raw_file);
+						if (all_txt_file) fclose(all_txt_file);
+						if (all_off_raw_file) fclose(all_off_raw_file);
 
-					// close input files
-					fclose(dump_file);
-				} /* if (dump_file) */
-			} /* if ( ... filenames ... ) */
+						// close input files
+						fclose(dump_file);
+					} /* if (dump_file) */
+				} /* if ( ... filenames ... ) */
 
-			if (dump_filename) free(dump_filename);
-			if (off_raw_filename) free(off_raw_filename);
-			if (all_txt_filename) free(all_txt_filename);
-			if (all_off_raw_filename) free(all_off_raw_filename);
-			if (all_idx_raw_filename) free(all_idx_raw_filename);
+				if (dump_filename) free(dump_filename);
+				if (off_raw_filename) free(off_raw_filename);
+				if (all_txt_filename) free(all_txt_filename);
+				if (all_off_raw_filename) free(all_off_raw_filename);
+				if (all_idx_raw_filename) free(all_idx_raw_filename);
+
+			} else {
+				_ftprintf(stderr, _T("** the following must be set either in the config file or on the command line: dump path, index path, language code, project, date\n"));
+				_ftprintf(stderr, _T("** dump path: '%s'\n"), dumppath);
+				_ftprintf(stderr, _T("** index path: '%s'\n"), indexpath);
+				_ftprintf(stderr, _T("** language: '%s'\n"), dumplang);
+				_ftprintf(stderr, _T("** project: '%s'\n"), dumpproj);
+				_ftprintf(stderr, _T("** date: '%s'\n"), dumpdate);
+			}
 		}
 
 		if (dumppath) free(dumppath);
@@ -170,7 +205,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	int pc = 0;							// page count
 	int rc = 0;							// revision count for this page
 	int rc_all = 0;						// revision count over all pages
-	const char *title = NULL;					// dump files are always UTF-8
+	const char *title = NULL;			// dump files are always UTF-8
 	int pid = -1;						// page ID
 	seek_type poff;						// page offset
 	int rid = -1;						// rev ID
@@ -194,8 +229,6 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 
 		if (state == 0) {
 			if (strstr(line, "<page>")) {
-				++ pc;
-
 				if ((pc % progress_modulo) == 0)
 					show_progress = 1;
 
@@ -233,8 +266,6 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 			if ((p1 = strstr(line, "<title>")) != NULL && (p2 = strstr(p1, "</title>")) != NULL) {
 				*p2 = '\0';
 
-				// TODO keep these in a linked list for the sorting phase
-				//title = _strdup(p1 + 7);	// TODO check for failure
 				title = strdup_to_list(&g_title_list_tail_address, p1 + 7);
 				
 			} else if ((p1 = strstr(line, "<id>")) != NULL && (p2 = strstr(p1, "</id>")) != NULL) {
@@ -305,6 +336,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 					show_progress = 0;
 				}
 
+				++ pc;
 				state = 0;
 				rc_all += rc;
 
@@ -320,8 +352,6 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 					}
 				}
 
-				// TODO keep these in a linked list for the sorting phase
-				//if (title) free(title);
 				title = NULL;
 
 				pid = -1;
@@ -377,21 +407,31 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	}
 
 	if (opt_d) {
-		_ftprintf(stderr, _T("%d pages and %d revisions (average %0.02f revisions per page)\n"), pc, rc_all, (float)(pc == 0 ? -1 : (float)rc_all / (float)pc));
-		_ftprintf(stderr, _T("biggest page offset: 0x%016llx (%llu)\n"), (unsigned long long)biggest_poff, (unsigned long long)biggest_poff);
-#ifdef _WIN32
+		int pobits = bits_needed(biggest_poff);
+		int robits = bits_needed(biggest_roff);
+
+		_ftprintf(stderr, _T("%d pages and %d revisions (average %0.02f revisions per page)\n"),
+			pc, rc_all, (float)(pc == 0 ? -1 : (float)rc_all / (float)pc));
+		_ftprintf(stderr, _T("biggest page offset: 0x%016llx (%llu) [needs %d bits, %d bytes]\n"),
+			(unsigned long long)biggest_poff, (unsigned long long)biggest_poff, pobits, (pobits-1)/8+1);
 		{
-			_TCHAR *a = _tcsdup_from_A(biggest_roff_title);
-			_TCHAR *b = _tcsdup_from_A(most_revs_title);
-			_ftprintf(stderr, _T("biggest revision offset: 0x%08x (%u) \"%s\"\n"), biggest_roff, biggest_roff, a);
+			_TCHAR *a;
+			_TCHAR *b;
+#ifdef _WIN32
+			a = _tcsdup_from_A(biggest_roff_title);
+			b = _tcsdup_from_A(most_revs_title);
+#else
+			a = biggest_roff_title;
+			b = most_revs_title;
+#endif
+			_ftprintf(stderr, _T("biggest revision offset: 0x%08x (%u) [needs %d bits, %d bytes] \"%s\"\n"),
+				biggest_roff, biggest_roff, robits, (robits-1)/8+1, a);
 			_ftprintf(stderr, _T("most revisions: %u \"%s\"\n"), most_revs, b);
+#ifdef _WIN32
 			free(a);
 			free(b);
-		}
-#else
-		_ftprintf(stderr, _T("biggest revision offset: 0x%08x (%u) \"%s\"\n"), biggest_roff, biggest_roff, biggest_roff_title);
-		_ftprintf(stderr, _T("most revisions: %u \"%s\"\n"), most_revs, most_revs_title);
 #endif
+		}
 	}
 
 	if (biggest_roff_title) free(biggest_roff_title);
@@ -404,12 +444,12 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 // helper functions
 
 // On Windows the console parameters are UTF-16 though this tool only needs ASCII parameters so far
-int parse_args(const int argc, _TCHAR* argv[], int *opt_d, int *opt_h, _TCHAR **dumplang, _TCHAR **dumpproj, _TCHAR **dumpdate)
+int parse_args(const int argc, _TCHAR* argv[], struct options *opt, _TCHAR **dumplang, _TCHAR **dumpproj, _TCHAR **dumpdate)
 {
-	const _TCHAR *usage = _T("usage: wiktmkrawidx (-d -h) ll pppp... yyyymmdd\n");
+	const _TCHAR *usage = _T("usage: wiktmkrawidx (-d -h -dp= -ip= -dfn=) ll pppp... yyyymmdd\n");
 
 	int mandatory_params = 3;
-	int optional_params = 2;
+	int optional_params = 5;
 
 	int ok = 1;
 
@@ -423,13 +463,29 @@ int parse_args(const int argc, _TCHAR* argv[], int *opt_d, int *opt_h, _TCHAR **
 
 			int a;
 			for (a = 0; a < optional_params && argv[a + 1][0] == '-'; ++a) {
+				_TCHAR *ap;
+
+				// switches
 
 				if (!_tcscmp(argv[a + 1], _T("-d"))) {
 					_ftprintf(stderr, _T("** -d = debug\n"));
-					*opt_d = 1;
+					opt->opt_d = 1;
 				} else if (!_tcscmp(argv[a + 1], _T("-h"))) {
 					_ftprintf(stderr, _T("** -h = meta-history\n"));
-					*opt_h = 1;
+					opt->opt_h = 1;
+
+				// arguments that take values
+
+				} else if ((ap = _tcsstr(argv[a + 1], _T("-dp="))) != NULL) {
+					_ftprintf(stderr, _T("** -dp = dump path: '%s'\n"), ap + 4);
+					opt->opt_dp = ap + 4;
+				} else if ((ap = _tcsstr(argv[a + 1], _T("-ip="))) != NULL) {
+					_ftprintf(stderr, _T("** -ip = index path: '%s'\n"), ap + 4);
+					opt->opt_ip = ap + 4;
+				} else if ((ap = _tcsstr(argv[a + 1], _T("-dfn="))) != NULL) {
+					_ftprintf(stderr, _T("** -dfn = dump filename: '%s'\n"), ap + 5);
+					opt->opt_dfn = ap + 5;
+
 				} else {
 					_ftprintf(stderr, _T("** unknown parameter %d: %s\n"), a, argv[a + 1]);
 					ok = 0;
@@ -511,7 +567,8 @@ _TCHAR *win_get_config_filename(void)
 
 #endif
 
-int read_config(_TCHAR **dumppath, _TCHAR **indexpath)
+// TODO support tab separated key value pairs
+int read_config(struct options *opt, _TCHAR **dumppath, _TCHAR **indexpath)
 {
 	int retval = 0;
 
@@ -531,11 +588,19 @@ int read_config(_TCHAR **dumppath, _TCHAR **indexpath)
 					if (configlineA[strlen(configlineA)-1] == '\n')
 						configlineA[strlen(configlineA)-1] = '\0';
 
-                    *dumppath = _tcsdup_from_A(configlineA);
-                    *indexpath = _tcsdup_from_A(configlineA);
+					if (opt->opt_dp) {
+						_ftprintf(stderr, _T("dump path override on command-line: %s\n"), opt->opt_dp);
+					} else {
+						*dumppath = _tcsdup_from_A(configlineA);
+						_ftprintf(stderr, _T("dump path: %s\n"), *dumppath);
+					}
 
-                    _ftprintf(stderr, _T("dump path: %s\n"), *dumppath);
-                    _ftprintf(stderr, _T("index path: %s\n"), *indexpath);
+					if (opt->opt_ip) {
+						_ftprintf(stderr, _T("index path override on command-line: %s\n"), opt->opt_ip);
+					} else {
+						*indexpath = _tcsdup_from_A(configlineA);
+						_ftprintf(stderr, _T("index path: %s\n"), *indexpath);
+					}
 
                     // TODO don't return success unless both paths were allcated
 					retval = 1;
@@ -779,3 +844,10 @@ int sort_titles(int opt_d, int page_count, FILE *all_txt_file, FILE *all_idx_raw
     return 0;
 }
 
+int bits_needed(unsigned long long l)
+{
+	int n;
+	for (n = 0; l; l >>= 1)
+		++n;
+	return n;
+}
