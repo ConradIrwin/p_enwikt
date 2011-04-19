@@ -3,7 +3,10 @@
 # wiktsplitnames indexfile dumpfile
 #
 # uses a binary index file to dump all the names from a dump file
+#
+# TODO support 64-bit indexes!
 
+use bignum;
 use strict;
 use Encode;
 use Getopt::Std;
@@ -14,7 +17,7 @@ use Unicode::Normalize;
 # $opt_b    emit bodies to fluxxo/ instead of titles to buxxo/
 # $opt_n    Unicode normalization of titles
 
-use vars qw($opt_b $opt_n);
+use vars qw($opt_b $opt_n $opt_6);
 
 my %nses = (
 	'Talk' => 1,
@@ -52,16 +55,16 @@ my %nses = (
 
 getopts('bn');
 
-my $if = shift;
+my $of = shift;
 my $df = shift;
 
 my $dfh;    # only used in the bzip2 case
 my $mode;   # 0 for text, 1 for bzip2
 
 open(DFH, $df) or die "no dump file";
-open(IFH, $if) or die "no index file";
+open(OFH, $of) or die "no index file";
 
-binmode(IFH);
+binmode(OFH);
 if ($opt_n) {
 	binmode(STDOUT, 'utf8');
 } else {
@@ -89,22 +92,49 @@ if (rindex($df, ".bz2") != -1) {
     seek(DFH, 0, 0);
 }
 
-print STDERR "** index file: $if\n";
+print STDERR "** index file: $of\n";
 print STDERR "** dump file: $df\n";
+
+# detect whether we have a 32-bit or 64+32-bit offset file
+
+print STDERR '** dump offset size ', (-s OFH), "\n";
+if ((-s OFH) % 12 == 0) {
+    print STDERR "** an exact multiple of twelve, possibly a new-style 64-bit dump index\n";
+    $opt_6 = 1;
+} else {
+    print STDERR "** not an exact multiple of twelve, an old-style 32-bit dump index\n";
+    $opt_6 = 0;
+}
 
 my ($v, $o, $l, $t);
 
 while (1) {
-    read(IFH, $v, 4) || last;
-
-    $o = unpack('I', $v);
+    if ($opt_6) {
+        read(OFH, $v, 4) || last;
+        $o = unpack('I', $v);
+        read(OFH, $v, 4) || last;
+        $o += unpack('I', $v) << 32;
+        read(OFH, $v, 4) || last;
+        $o += unpack('I', $v);
+    } else {
+        read(OFH, $v, 4) || last;
+        $o = unpack('I', $v);
+    }
 
     if ($mode == 0) {
         seek(DFH, $o, 0);# == 0 && die "seek doesnt work";
-        $l = <DFH>;
     } else {
         $dfh->seek($o, 0);
-        $l = <$dfh>;
+    }
+
+    while (1) {
+        if ($mode == 0) {
+            $l = <DFH>;
+        } else {
+            $l = <$dfh>;
+        }
+
+        last if index($l, '<title>') != -1;
     }
 
     $l = decode('utf8', $l) if ($opt_n);
@@ -124,38 +154,42 @@ while (1) {
 		$ns = 0 if ($ns eq undef);
 	}
 
-	if ($ns ne 0) {
-        my ($left, $right) = ($t =~ /^([^:]*):(.*)$/);
-        $opt_b || emit_title('_'.$left, $right);
-        if ($opt_b) {
+    # don't look for == ??? == unless we're in the article namespace
+    next unless $ns == 0;
 
-            # ignore fields between title and text
-            while (<DFH>) {
-                last if (/<text /);
-            }
-
-            $l = $_;
-            my $islast = 0;
-            my $body = '';
-            while (1) {
-                if (index($l, '      <text') == 0) {
-                    $l = substr($l, 33);
-                }
-                if (rindex($l, '</text>') != -1) {
-                    $l = substr($l, 0, -8);
-                    $islast = 1;
-                }
-
-                $body .= $l;
-
-                $l = <DFH>;
-
-                last if $islast;
-            }
-            emit_prev_body('_'.$left, $t, $body);
-        }
-		next;
-	}
+    # this was here to allow prev/next in category but was never complete
+    #if ($ns ne 0) {
+    #    my ($left, $right) = ($t =~ /^([^:]*):(.*)$/);
+    #    $opt_b || emit_title('_'.$left, $right);
+    #    if ($opt_b) {
+    #
+    #        # ignore fields between title and text
+    #        while (<DFH>) {
+    #            last if (/<text /);
+    #        }
+    #
+    #        $l = $_;
+    #        my $islast = 0;
+    #        my $body = '';
+    #        while (1) {
+    #            if (index($l, '      <text') == 0) {
+    #                $l = substr($l, 33);
+    #            }
+    #            if (rindex($l, '</text>') != -1) {
+    #                $l = substr($l, 0, -8);
+    #                $islast = 1;
+    #            }
+    #
+    #            $body .= $l;
+    #
+    #            $l = <DFH>;
+    #
+    #            last if $islast;
+    #        }
+    #        emit_prev_body('_'.$left, $t, $body);
+    #    }
+    #	next;
+    #}
 
 	# we have the title so now we need to check the namespace and look for language headings
 	while (<DFH>) {
