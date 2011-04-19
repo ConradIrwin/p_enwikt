@@ -106,34 +106,35 @@ if ((-s OFH) % 12 == 0) {
     $opt_6 = 0;
 }
 
-my ($v, $o, $l, $t);
+my ($v, $po, $ro, $l, $t);
 
 while (1) {
     if ($opt_6) {
         read(OFH, $v, 4) || last;
-        $o = unpack('I', $v);
+        $po = unpack('I', $v);
         read(OFH, $v, 4) || last;
-        $o += unpack('I', $v) << 32;
+        $po += unpack('I', $v) << 32;
+
         read(OFH, $v, 4) || last;
-        $o += unpack('I', $v);
+        $ro = unpack('I', $v);
     } else {
         read(OFH, $v, 4) || last;
-        $o = unpack('I', $v);
+        $po = unpack('I', $v);
     }
 
     if ($mode == 0) {
-        seek(DFH, $o, 0);# == 0 && die "seek doesnt work";
+        seek(DFH, $po, 0);# == 0 && die "seek doesnt work";
     } else {
-        $dfh->seek($o, 0);
+        $dfh->seek($po, 0);
     }
 
+    # skip over lines from <page> until <title>
     while (1) {
         if ($mode == 0) {
             $l = <DFH>;
         } else {
             $l = <$dfh>;
         }
-
         last if index($l, '<title>') != -1;
     }
 
@@ -154,7 +155,7 @@ while (1) {
 		$ns = 0 if ($ns eq undef);
 	}
 
-    # don't look for == ??? == unless we're in the article namespace
+    # don't look for language headings unless we're in the article namespace
     next unless $ns == 0;
 
     # this was here to allow prev/next in category but was never complete
@@ -191,7 +192,14 @@ while (1) {
     #	next;
     #}
 
-	# we have the title so now we need to check the namespace and look for language headings
+	# we have the title so seek to the last revision and look for language headings
+    if ($mode == 0) {
+        seek(DFH, $po + $ro, 0);# == 0 && die "seek doesnt work";
+    } else {
+        $dfh->seek($po + $ro, 0);
+    }
+
+    # skip over lines from <revision> until <text>
 	while (<DFH>) {
 		last if (/<text /);
 	}
