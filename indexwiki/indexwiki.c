@@ -35,6 +35,7 @@ struct options {
 	_TCHAR *opt_ip;			// index path
 
 	_TCHAR *opt_dfn;		// dump filename
+    _TCHAR *opt_ifnb;       // index filename base
 };
 
 struct stringnode {
@@ -55,7 +56,7 @@ int check_range_and_length(const _TCHAR *s, _TCHAR minchar, _TCHAR maxchar, int 
 _TCHAR *get_config_filename(void);
 int parse_args(const int argc, _TCHAR* argv[], struct options *, _TCHAR **dumplang, _TCHAR **dumpproj, _TCHAR **dumpdate);
 int read_config(struct options *, _TCHAR **dumppath, _TCHAR **indexpath);
-char *myreadline(FILE *);
+char *myreadline(FILE *, int *lenptr);
 char *alloc_sprintf(const char *fmt, ...);
 _TCHAR *alloc_stprintf(const _TCHAR *fmt, ...);
 _TCHAR *_tcsdup_from_A(const char *);
@@ -224,8 +225,8 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	char *line;							// since dumps are always UTF-8
 	int line_len;
 
-	while (line = myreadline(dump_file)) {
-		line_len = strlen(line);
+	while (line = myreadline(dump_file, &line_len)) {
+		// line_len = strlen(line);
 
 		if (state == 0) {
 			if (strstr(line, "<page>")) {
@@ -575,47 +576,47 @@ int read_config(struct options *opt, _TCHAR **dumppath, _TCHAR **indexpath)
 	_TCHAR *config_path = get_config_filename();
 
 	if (config_path) {
-		FILE *config_fp = _tfopen(config_path, _T("r"));
+		FILE *config_file = _tfopen(config_path, _T("r"));
 
-		if (config_fp) {
-			// TODO use myreadline
-			char configlineA[256];
+		if (config_file) {
+            char *line;
+            int linelen;
 
-			if (fgets(configlineA, sizeof configlineA, config_fp) == NULL) {
+            if ((line = myreadline(config_file, &linelen)) == NULL) {
 				_ftprintf(stderr, _T("config read error\n"));
 			} else {
-				if (strchr(configlineA, '\n') || feof(config_fp)) {
-					if (configlineA[strlen(configlineA)-1] == '\n')
-						configlineA[strlen(configlineA)-1] = '\0';
+                if (strchr(line, '\r'))
+                    _ftprintf(stderr, _T("** config file contains CR\n"));
+                else
+                    _ftprintf(stderr, _T("** config file does not contain CR\n"));
 
-					if (opt->opt_dp) {
-						_ftprintf(stderr, _T("dump path override on command-line: %s\n"), opt->opt_dp);
-					} else {
-						*dumppath = _tcsdup_from_A(configlineA);
-						_ftprintf(stderr, _T("dump path: %s\n"), *dumppath);
-					}
+                if (line[linelen-1] == '\n')
+                    line[linelen-1] = '\0';
 
-					if (opt->opt_ip) {
-						_ftprintf(stderr, _T("index path override on command-line: %s\n"), opt->opt_ip);
-					} else {
-						*indexpath = _tcsdup_from_A(configlineA);
-						_ftprintf(stderr, _T("index path: %s\n"), *indexpath);
-					}
+                if (opt->opt_dp) {
+                    _ftprintf(stderr, _T("dump path override on command-line: %s\n"), opt->opt_dp);
+                } else {
+                    *dumppath = _tcsdup_from_A(line);
+                    _ftprintf(stderr, _T("dump path: %s\n"), *dumppath);
+                }
 
-                    // TODO don't return success unless both paths were allcated
-					retval = 1;
-				} else {
-					_ftprintf(stderr, _T("config line too long\n"));
-				}
+                if (opt->opt_ip) {
+                    _ftprintf(stderr, _T("index path override on command-line: %s\n"), opt->opt_ip);
+                } else {
+                    *indexpath = _tcsdup_from_A(line);
+                    _ftprintf(stderr, _T("index path: %s\n"), *indexpath);
+                }
+
+                retval = 1;
 			}
 
-			fclose(config_fp);
+			fclose(config_file);
 		} else {
-			_ftprintf(stderr, _T("config file not found '%s'\n"), config_path);
+			_ftprintf(stderr, _T("** config file not found '%s'\n"), config_path);
 		}
 
 		free(config_path);
-	}
+	} /* config_path */
 
 	return retval;
 }
@@ -644,7 +645,7 @@ int check_range_and_length(const _TCHAR *s, _TCHAR minchar, _TCHAR maxchar, int 
 }
 
 // The config file is expected to be byte-based on all OSes
-char *myreadline(FILE *f)
+char *myreadline(FILE *f, int *lenptr)
 {
 	char *line = NULL;
 	int linelen = -1;
@@ -686,6 +687,8 @@ char *myreadline(FILE *f)
 				break;
 		}
 	}
+
+    if (lenptr != NULL) *lenptr = linelen;
 
 	return line;
 }
