@@ -13,6 +13,7 @@
 //	xxx-all-idx.raw
 //		an "unsigned long" (32 bit) index of the position each page title is in after sorting
 //
+// TODO implement index filename base
 // TODO config file should support separate dump and index paths
 // TODO prompt user if output files already exist
 // TODO decide frequency of progress reports from type and size of dump file
@@ -24,6 +25,7 @@
 // TODO   titles longer than the chunk size need to be special-case'd
 // TODO instead of waiting till we have all the titles then putting them in an array and sorting them we could use a BST
 // TODO use the minimum number of bytes for offsets, we can adjust the files after we know the maximum offset
+// TODO change config filename from wiktconfig to wikiconfig? or .wikiconfig?
 
 #include "stdafx.h"
 
@@ -211,6 +213,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	seek_type poff;						// page offset
 	int rid = -1;						// rev ID
 	int roff = -1;						// rev offset
+	long txt_told;						// offset of title in -all.txt to write to -all-off.raw
 
 	seek_type biggest_poff = 0;
 	int biggest_roff = 0;
@@ -281,14 +284,14 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 
 		} else if (state == 2) {
 			if (strstr(line, "<revision>")) {
-				seek_type told;
+				seek_type dump_told;
 
 				++ rc;
 
 				state = 3;
 
-				told = ftello(dump_file) - line_len;
-				roff = (int)(told - poff);
+				dump_told = ftello(dump_file) - line_len;
+				roff = (int)(dump_told - poff);
 
 				if (roff >= biggest_roff) {
 					const char *temp = roff == biggest_roff ? "several pages" : title;
@@ -306,7 +309,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 				rid = -1;
 
 			} else if (strstr(line, "</page>")) {
-				long told = ftell(all_txt_file);
+				txt_told = ftell(all_txt_file);
 
 				fwrite(&poff, sizeof poff, 1, off_raw_file);
 				fwrite(&roff, sizeof roff, 1, off_raw_file);
@@ -318,7 +321,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 				fprintf(all_txt_file, "%s\n", title);
 #endif
 
-				fwrite(&told, sizeof told, 1, all_off_raw_file);
+				fwrite(&txt_told, sizeof txt_told, 1, all_off_raw_file);
 
 				if (show_progress) {
 					if (opt_d) {
@@ -410,6 +413,8 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	if (opt_d) {
 		int pobits = bits_needed(biggest_poff);
 		int robits = bits_needed(biggest_roff);
+		int txtbits = bits_needed(txt_told);
+		int idxbits = bits_needed(pc-1);
 
 		_ftprintf(stderr, _T("%d pages and %d revisions (average %0.02f revisions per page)\n"),
 			pc, rc_all, (float)(pc == 0 ? -1 : (float)rc_all / (float)pc));
@@ -433,6 +438,10 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 			free(b);
 #endif
 		}
+		_ftprintf(stderr, _T("biggest title offset: 0x%08x (%u) [needs %d bits, %d bytes]\n"),
+			txt_told, txt_told, txtbits, (txtbits-1)/8+1);
+		_ftprintf(stderr, _T("biggest page index: 0x%08x (%u) [needs %d bits, %d bytes]\n"),
+			pc-1, pc-1, idxbits, (idxbits-1)/8+1);
 	}
 
 	if (biggest_roff_title) free(biggest_roff_title);
@@ -582,16 +591,17 @@ int read_config(struct options *opt, _TCHAR **dumppath, _TCHAR **indexpath)
             char *line;
             int linelen;
 
-            if ((line = myreadline(config_file, &linelen)) == NULL) {
-				_ftprintf(stderr, _T("config read error\n"));
-			} else {
-                if (strchr(line, '\r'))
-                    _ftprintf(stderr, _T("** config file contains CR\n"));
-                else
-                    _ftprintf(stderr, _T("** config file does not contain CR\n"));
-
-                if (line[linelen-1] == '\n')
-                    line[linelen-1] = '\0';
+            if ((line = myreadline(config_file, &linelen)) != NULL) {
+				if (linelen > 0) {
+					if (line[linelen-1] == '\n') {
+						line[linelen-1] = '\0';
+						if (linelen > 1) {
+							if (line[linelen-2] == '\r') {
+								line[linelen-2] = '\0';
+							}
+						}
+					}
+				}
 
                 if (opt->opt_dp) {
                     _ftprintf(stderr, _T("dump path override on command-line: %s\n"), opt->opt_dp);
@@ -608,6 +618,10 @@ int read_config(struct options *opt, _TCHAR **dumppath, _TCHAR **indexpath)
                 }
 
                 retval = 1;
+
+				free(line);
+			} else {
+				_ftprintf(stderr, _T("config read error\n"));
 			}
 
 			fclose(config_file);
