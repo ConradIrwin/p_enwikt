@@ -41,7 +41,7 @@
 
 // our own cross-platform functions
 
-# define get_config_filename		win_get_config_filename
+# define get_config_path		win_get_config_path
 
 // fseek / ftell
 
@@ -53,6 +53,10 @@ typedef __int64		seek_type;
 // ** *nix section **
 
 #else
+
+// *nix-specific includes
+
+# include <unistd.h>
 
 # if defined(sun) || defined(__sun)
 
@@ -79,6 +83,7 @@ typedef __int64		seek_type;
 // tchar.h
 
 # define _ftprintf	fprintf
+# define _taccess   access
 # define _tcscmp     strcmp
 # define _tcsdup		strdup
 # define _tcsstr         strstr
@@ -89,7 +94,7 @@ typedef char		_TCHAR;
 
 // our own cross-platform functions
 
-# define get_config_filename unix_get_config_filename
+# define get_config_path unix_get_config_path
 
 // fseek / ftell
 

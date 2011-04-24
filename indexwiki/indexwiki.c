@@ -13,7 +13,6 @@
 //	xxx-all-idx.raw
 //		an "unsigned long" (32 bit) index of the position each page title is in after sorting
 //
-// TODO implement index filename base
 // TODO config file should support separate dump and index paths
 // TODO prompt user if output files already exist
 // TODO decide frequency of progress reports from type and size of dump file
@@ -21,11 +20,14 @@
 // TODO write metadata to .txt file (number of pages, revs; max page offset, rev offset, number of bits needed for each)
 // TODO report more factoids: lowest page id, revision id, longest title
 // TODO support dump file coming via a pipe
+// TODO support bzip2'd dump file using seek-bzip2
 // TODO instead of strdup()ing each title into its own node, malloc() big chunks of memory as nodes and concatenate lots of titles in them separated only by \0
 // TODO   titles longer than the chunk size need to be special-case'd
-// TODO instead of waiting till we have all the titles then putting them in an array and sorting them we could use a BST
 // TODO use the minimum number of bytes for offsets, we can adjust the files after we know the maximum offset
-// TODO change config filename from wiktconfig to wikiconfig? or .wikiconfig?
+// TODO XXX the fwrite all-idx.raw code can segfault when the dump file is truncated
+// TODO group all index files together in directory
+// TODO move dumplang, dumpproj, dumpdate into the options structure?
+// TODO specify name of config file on commandline?
 
 #include "stdafx.h"
 
@@ -55,6 +57,7 @@ static char **g_title_array;
 // forward declarations
 int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE *all_txt_file, FILE *all_off_raw_file, const _TCHAR *all_idx_raw_filename);
 int check_range_and_length(const _TCHAR *s, _TCHAR minchar, _TCHAR maxchar, int minlen, int maxlen);
+_TCHAR *get_config_path(void);
 _TCHAR *get_config_filename(void);
 int parse_args(const int argc, _TCHAR* argv[], struct options *, _TCHAR **dumplang, _TCHAR **dumpproj, _TCHAR **dumpdate);
 int read_config(struct options *, _TCHAR **dumppath, _TCHAR **indexpath);
@@ -109,10 +112,17 @@ int _tmain(int argc, _TCHAR* argv[])
 				}
 
 				// TODO include project or make configurable with a template
-				off_raw_filename = alloc_stprintf(_T("%s%s%s-off.raw"), indexpath, dumplang, dumpdate);
-				all_txt_filename = alloc_stprintf(_T("%s%s%s-all.txt"), indexpath, dumplang, dumpdate);
-				all_off_raw_filename = alloc_stprintf(_T("%s%s%s-all-off.raw"), indexpath, dumplang, dumpdate);
-				all_idx_raw_filename = alloc_stprintf(_T("%s%s%s-all-idx.raw"), indexpath, dumplang, dumpdate);
+				if (opt.opt_ifnb) {
+					off_raw_filename = alloc_stprintf(_T("%s%s-off.raw"), indexpath, opt.opt_ifnb);
+					all_txt_filename = alloc_stprintf(_T("%s%s-all.txt"), indexpath, opt.opt_ifnb);
+					all_off_raw_filename = alloc_stprintf(_T("%s%s-all-off.raw"), indexpath, opt.opt_ifnb);
+					all_idx_raw_filename = alloc_stprintf(_T("%s%s-all-idx.raw"), indexpath, opt.opt_ifnb);
+				} else {
+					off_raw_filename = alloc_stprintf(_T("%s%s%s-off.raw"), indexpath, dumplang, dumpdate);
+					all_txt_filename = alloc_stprintf(_T("%s%s%s-all.txt"), indexpath, dumplang, dumpdate);
+					all_off_raw_filename = alloc_stprintf(_T("%s%s%s-all-off.raw"), indexpath, dumplang, dumpdate);
+					all_idx_raw_filename = alloc_stprintf(_T("%s%s%s-all-idx.raw"), indexpath, dumplang, dumpdate);
+				}
 
 				if (dump_filename && off_raw_filename && all_txt_filename && all_off_raw_filename) {
 
@@ -179,6 +189,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				if (all_idx_raw_filename) free(all_idx_raw_filename);
 
 			} else {
+				// TODO we don't need language, project, date if we specify dump filename and index base filename on the commandline
 				_ftprintf(stderr, _T("** the following must be set either in the config file or on the command line: dump path, index path, language code, project, date\n"));
 				_ftprintf(stderr, _T("** dump path: '%s'\n"), dumppath);
 				_ftprintf(stderr, _T("** index path: '%s'\n"), indexpath);
@@ -456,10 +467,10 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 // On Windows the console parameters are UTF-16 though this tool only needs ASCII parameters so far
 int parse_args(const int argc, _TCHAR* argv[], struct options *opt, _TCHAR **dumplang, _TCHAR **dumpproj, _TCHAR **dumpdate)
 {
-	const _TCHAR *usage = _T("usage: wiktmkrawidx (-d -h -dp= -ip= -dfn=) ll pppp... yyyymmdd\n");
+	const _TCHAR *usage = _T("usage: wiktmkrawidx (-d -h -dp= -ip= -dfn= -ifnb=) ll pppp... yyyymmdd\n");
 
 	int mandatory_params = 3;
-	int optional_params = 5;
+	int optional_params = 6;
 
 	int ok = 1;
 
@@ -495,6 +506,9 @@ int parse_args(const int argc, _TCHAR* argv[], struct options *opt, _TCHAR **dum
 				} else if ((ap = _tcsstr(argv[a + 1], _T("-dfn="))) != NULL) {
 					_ftprintf(stderr, _T("** -dfn = dump filename: '%s'\n"), ap + 5);
 					opt->opt_dfn = ap + 5;
+				} else if ((ap = _tcsstr(argv[a + 1], _T("-ifnb="))) != NULL) {
+					_ftprintf(stderr, _T("** -ifnb = index filename base: '%s'\n"), ap + 6);
+					opt->opt_ifnb = ap + 6;
 
 				} else {
 					_ftprintf(stderr, _T("** unknown parameter %d: %s\n"), a, argv[a + 1]);
@@ -534,48 +548,77 @@ int parse_args(const int argc, _TCHAR* argv[], struct options *opt, _TCHAR **dum
 
 #ifndef _WIN32
 
-_TCHAR *unix_get_config_filename(void)
+// *nix paths are UTF-8
+_TCHAR *unix_get_config_path(void)
 {
-	_TCHAR *config_filename = NULL;
-
+	_TCHAR *config_path = NULL;
 	char *home = getenv("HOME");
 
-    // TODO we can probably replace this with alloc_stprintf then get rid of alloc_sprintf
 	if (home)
-		config_filename = alloc_sprintf("%s%c%s", home, '/', "wiktpath.txt");
+		config_path = _tcsdup(home);
 
-	return config_filename;
+	return config_path;
 }
 
 #else
 
 // Windows paths are UTF-16
-_TCHAR *win_get_config_filename(void)
+_TCHAR *win_get_config_path(void)
 {
-	_TCHAR *config_filename = NULL;
-
+	_TCHAR *config_path = NULL;
 	// This is only for Vista and above, for older OSes back to Windows 2000 use SHGetFolderPath
 	// maybe we should really use AppData etc but Vim uses this so good enough for me
 	PWSTR home;
 	HRESULT hr = SHGetKnownFolderPath(&FOLDERID_Profile, 0, NULL, &home);
 
 	if (hr == S_OK) {
-		int homelen = _tcslen(home);
-		_TCHAR rest[] = _T("\\wiktpath.txt");
-		int restlen = sizeof rest / sizeof(_TCHAR);	// this includes the trailing null!
-
-		if (config_filename = malloc((homelen + restlen) * sizeof(_TCHAR))) {
-			memcpy(config_filename, home, homelen * sizeof(_TCHAR));
-			memcpy(config_filename + homelen, rest, restlen * sizeof(_TCHAR));
-		}
-
+		config_path = _tcsdup(home);
 		CoTaskMemFree(home);
 	}
 
-	return config_filename;
+	return config_path;
 }
 
 #endif
+
+_TCHAR *get_config_filename(void)
+{
+    _TCHAR *config_path = get_config_path();
+    _TCHAR *config_filename = NULL;
+#ifdef _WIN32
+    _TCHAR sep = '\\';
+#else
+    _TCHAR sep = '/';
+#endif
+
+    if (config_path) {
+        // TODO check various config filenames with _taccess(path, 00). -1 means it doesn't exist
+        // TODO wiktpath is not a great name for people not doing wiktionaries
+        const _TCHAR *names[] = {_T(".wikipath"), _T("wikipath.txt"), _T("wiktpath.txt")};
+        int i;
+        for (i = 0; i < sizeof(names); ++i) {
+            if (config_filename) {
+                free(config_filename);
+                config_filename = NULL;
+            }
+
+            //config_filename = alloc_stprintf(_T("%s%c%s"), config_path, sep, _T("wiktpath.txt"));
+            config_filename = alloc_stprintf(_T("%s%c%s"), config_path, sep, names[i]);
+
+            if (_taccess(config_filename, 00) == -1) {
+                _ftprintf(stderr, _T("** can't access '%s'\n"), config_filename);
+            } else {
+                _ftprintf(stderr, _T("** can access '%s'\n"), config_filename);
+                break;
+            }
+
+
+        }
+        free(config_path);
+    }
+
+    return config_filename;
+}
 
 // TODO support tab separated key value pairs
 int read_config(struct options *opt, _TCHAR **dumppath, _TCHAR **indexpath)
@@ -592,6 +635,7 @@ int read_config(struct options *opt, _TCHAR **dumppath, _TCHAR **indexpath)
             int linelen;
 
             if ((line = myreadline(config_file, &linelen)) != NULL) {
+                // chomp EOL covering all platform variations
 				if (linelen > 0) {
 					if (line[linelen-1] == '\n') {
 						line[linelen-1] = '\0';
@@ -667,15 +711,16 @@ char *myreadline(FILE *f, int *lenptr)
 	
 	while (1) {
 		if (fgets(chunk, sizeof chunk, f) == NULL) {
-			if (feof(f)) {
-				// TODO we don't have a way to indicate success
-				// TODO we should only print if opt_d is on
-				_ftprintf(stderr, _T("\n** end of file\n"));
-			} else if (ferror(f)) {
-				_ftprintf(stderr, _T("\n** read error\n"));
-			} else {
-				_ftprintf(stderr, _T("\n** unexpected condition!\n"));
-			}
+            // TODO we don't have a way to indicate success
+			// TODO don't really want to pass opt_d to this function
+            {
+                if (feof(f))
+                    _ftprintf(stderr, _T("\n** end of file\n"));
+                else if (ferror(f))
+                    _ftprintf(stderr, _T("\n** read error\n"));
+                else
+                    _ftprintf(stderr, _T("\n** unexpected condition!\n"));
+            }
 			break;
 
 		} else {
@@ -683,7 +728,10 @@ char *myreadline(FILE *f, int *lenptr)
 
 			int chunklen = e ? (e - chunk + 1) : strlen(chunk);
 
-			if (line) {
+			if (line == NULL) {
+				line = _strdup(chunk);
+				linelen = strlen(chunk);
+			} else {
 				// TODO check for out of memory
 				char *temp = (char *)malloc(linelen + chunklen + 1);
 				
@@ -692,9 +740,6 @@ char *myreadline(FILE *f, int *lenptr)
 				memcpy(temp + linelen, chunk, chunklen + 1);
 				line = temp;
 				linelen += chunklen;
-			} else {
-				line = _strdup(chunk);
-				linelen = strlen(chunk);
 			}
 
 			if (e || feof(f))
@@ -811,54 +856,47 @@ static int comparator(const void *a, const void *b)
 }
 
 // create a sorted index of the page titles
+// TODO would insertion sort be better?
 int sort_titles(int opt_d, int page_count, FILE *all_txt_file, FILE *all_idx_raw_file)
 {
-    const int prog = 10000;
     int *index;
+    int written;
+    int success = 0;
 
+    // allocate arrays so we can use qsort()
     g_title_array = (char **)malloc(page_count * sizeof(char *));
     index = (int *)malloc(page_count * sizeof(int));
 
     if (g_title_array && index) {
         struct stringnode *item;
-		int i = 0;
+		int title_count = 0;
 		
-		for (item = g_title_list_head; item != NULL; ++i, item = item->next) {
-			g_title_array[i] = item->title;
-            index[i] = i;
-
-            if (opt_d && (i % prog == 0 || i == page_count -1)) {
-                _TCHAR *t;
-#ifdef _WIN32
-                t = _tcsdup_from_A(g_title_array[i]);
-#else
-                t = g_title_array[i];
-#endif
-                _ftprintf(stderr, _T("%d: %s\n"), i, t);
-#ifdef _WIN32
-                free(t);
-#endif
-            }
+		for (item = g_title_list_head; item != NULL; ++title_count, item = item->next) {
+			g_title_array[title_count] = item->title;
+            index[title_count] = title_count;
         }
 
-		_ftprintf(stderr, _T("page count was %d, i = %d\n"), page_count, i);
+		//_ftprintf(stderr, _T("page count was %d, title_count = %d\n"), page_count, title_count);
 
-        _ftprintf(stderr, _T("sorting index\n"));
+        if (opt_d) _ftprintf(stderr, _T("sorting index\n"));
 
-        qsort((void *)index, i, sizeof(int), comparator);
+        qsort((void *)index, title_count, sizeof(int), comparator);
 
-        _ftprintf(stderr, _T("saving index\n"));
-		{
-			int x = fwrite(index, sizeof(int), i, all_idx_raw_file);
-			_ftprintf(stderr, _T("wrote %d\n"), x);
-		}
+        if (opt_d) _ftprintf(stderr, _T("saving index\n"));
+
+        // TODO XXX this code can segfault when the dump file is truncated
+        written = fwrite(index, sizeof(int), title_count, all_idx_raw_file);
+
+        if (opt_d) _ftprintf(stderr, _T("wrote %d\n"), written);
+
+        if (written == title_count)
+            success = 1;
     }
 
 	if (g_title_array) free(g_title_array);
     if (index) free (index);
 
-    // TODO return something meaningful
-    return 0;
+    return success;
 }
 
 int bits_needed(unsigned long long l)
