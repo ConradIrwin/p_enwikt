@@ -181,7 +181,6 @@ my %g_name2code;
     unless ($json) {
         print STDERR "** couldn't get data on language names and ISO 639-3 codes from langmetadata sever\n";
     } else {
-        # TODO try/catch with eval in case $json does not contain legal JSON
         eval {
             # the logic of utf8() is reversed for decode() but correct for encode()!!
             $data = $g_js->decode($json);
@@ -613,38 +612,47 @@ sub on_feed_response {
             }
         );
 
-        $parser->parse($http_response->decoded_content);
+        # bug ENWIKT-36
+        eval {
+            $parser->parse($http_response->decoded_content);
+        };
+        if ($@) {
+            my $info = "** feed $feed->{name} got invalid XML ($@)\n";
+            print STDERR "** $info\n";
+            print STDERR "** ", $parser->parse($http_response->decoded_content), "\n";
+            $g_irc->yield( privmsg => '#hippiebot', $info );
+        } else {
+            for (my $i = 0; $i < scalar @titles; ++$i) {
+                my $t = $titles[$i];
+                $t =~ s/(\s|\r|\n)+/ /sg;
+                $t =~ s/\s+$//;
+                decode_entities($t);
+                $t =~ s/<(?:[^>'"]*|(['"]).*?\1)*>//gs;
 
-        for (my $i = 0; $i < scalar @titles; ++$i) {
-            my $t = $titles[$i];
-            $t =~ s/(\s|\r|\n)+/ /sg;
-            $t =~ s/\s+$//;
-            decode_entities($t);
-            $t =~ s/<(?:[^>'"]*|(['"]).*?\1)*>//gs;
+                my $announce = 0;
 
-            my $announce = 0;
+                # at first successful feed check, the newest item, unless -F
+                # after that, all *new* items
 
-            # at first successful feed check, the newest item, unless -F
-            # after that, all *new* items
+                if (exists $feed->{initial_check_done}) {
+                    $announce = ! exists $feed->{seen}->{$t};
+                } else {
+                    $announce = $i == 0 && !$opt_F;
+                }
 
-            if (exists $feed->{initial_check_done}) {
-                $announce = ! exists $feed->{seen}->{$t};
-            } else {
-                $announce = $i == 0 && !$opt_F;
+                if ($opt_d && !$opt_F) {
+                    print STDERR 'tick: ', $g_feed_tick, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
+                }
+
+                # TODO should each channel should have its own feed delay when one bot can join multiple channels
+                foreach my $ch (@{$g_hippiebot{channels}}) {
+                    $announce && $g_irc->yield( privmsg => $ch, $feed->{name} . ': ' . $t );
+                }
+
+                $feed->{seen}->{$t} = 1;
             }
-
-            if ($opt_d && !$opt_F) {
-                print STDERR 'tick: ', $g_feed_tick, ' ', $feed->{name}, ' item: ', $i, ' title: \'', $t, '\'', $announce ? ' ANNOUNCE' : '', "\n";
-            }
-
-            # TODO should each channel should have its own feed delay when one bot can join multiple channels
-            foreach my $ch (@{$g_hippiebot{channels}}) {
-                $announce && $g_irc->yield( privmsg => $ch, $feed->{name} . ': ' . $t );
-            }
-
-            $feed->{seen}->{$t} = 1;
+            $feed->{initial_check_done} = 1;
         }
-        $feed->{initial_check_done} = 1;
     }
 
     $kernel->delay( feed_timer => $g_feed_delay );
@@ -1338,7 +1346,7 @@ sub on_gf_response {
     # parse html
     my $pattern = $site eq 'g'
         ? '<div id=resultStats>\D* ([0-9,.]+) \D*<nobr>'
-        : '<span class="sb_count" id="count">1-\d+ van ([0-9\.]+) resultaten<\/span>';
+        : '<span class="sb_count" id="count">1-\d+ .*? ([0-9\.]+) .*?<\/span>';
     if ($http_response->decoded_content =~ /$pattern/) { # }
         $fight->{terms}->{$term} = [$1, $1];
         $fight->{terms}->{$term}->[1] =~ s/[,.]//g;
@@ -1349,7 +1357,8 @@ sub on_gf_response {
     -- $fight->{numterms};
 
     if ($fight->{numterms} == 0) {
-        my $resp = 'Googlefight: ' . join(
+        my $resp = $site eq 'g' ? 'Google' : 'Bing';
+        $resp .= 'fight: ' . join(
             ', ',
             map {
                 ($_ =~ /^".*"$/ ? $_ : '\'' . $_ . '\'') . ': ' . $fight->{terms}->{$_}->[0]
@@ -1630,12 +1639,10 @@ sub on_sugg_response {
             $json = $http_response->decoded_content;
 
             if ($json) {
-                # the logic of utf8() is reversed for decode() but correct for encode()!!
-                my $confusing = ! utf8::is_utf8($json);
-                # TODO try/catch with eval in case $json does not contain legal JSON
                 my $res;
                 eval {
                     # the logic of utf8() is reversed for decode() but correct for encode()!!
+                    my $confusing = ! utf8::is_utf8($json);
                     $res = $g_js->utf8($confusing)->decode($json);  # works with charset => 'UTF-8' above
                 };
                 if ($@) {
