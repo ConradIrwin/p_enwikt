@@ -836,7 +836,6 @@ sub do_command {
     # Implement linky to resolve [[wikilinks]] in IRC to full URLs
     elsif ( $msg =~ /\[\[.*\]\]/ ) {
         my $resp = do_linky($channel, $msg);
-        print STDERR "do_linky returned '$resp'\n";
         $resps->[0] = $resp if defined $resp;
     }
 
