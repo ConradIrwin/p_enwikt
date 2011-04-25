@@ -831,6 +831,15 @@ sub do_command {
         $resps->[0] = do_random($args);
     }
 
+    # ENWIKT-40     
+    #
+    # Implement linky to resolve [[wikilinks]] in IRC to full URLs
+    elsif ( $msg =~ /\[\[.*\]\]/ ) {
+        my $resp = do_linky($channel, $msg);
+        print STDERR "do_linky returned '$resp'\n";
+        $resps->[0] = $resp if defined $resp;
+    }
+
     # asynchronous commands
     elsif ( ($site, $force, $args) = $msg =~ /^([bg])f(!)?\s+(.+)\s*$/ ) {
         my $resp = do_gf($kernel, $channel, $nick, $site, $force, $args);
@@ -973,7 +982,7 @@ sub on_lang_response {
                 @resps = ($input . ': can\'t find it in en.wiktionary language templates.');
             }
         }
-    } else { print STDERR "** $http_code : ", defined $err ? $err : '{no err msg)', "\n"; }
+    } else { print STDERR "** $http_code : ", defined $err ? $err : '(no err msg)', "\n"; }
 
     for my $resp (@resps) {
         # TODO generic yield privmsg sub
@@ -1738,6 +1747,21 @@ sub do_hippietrail {
         $resp = $1 . ' master';
     }
 
+    return $resp;
+}
+
+# SYNCHRONOUS
+sub do_linky {
+    my $channel = shift;
+    my $msg = shift;
+    my $resp = undef;
+
+    if ($channel) {
+        unless (grep $_ eq 'club_butler', $g_irc->channel_list($channel)) {
+            my @l = ($msg =~ /\[\[.*?\]\]/g);
+            $resp = join(', ', map { 'http://en.wiktionary.org/wiki/' . uri_escape_utf8(substr $_, 2, -2) } @l);
+        }
+    }
     return $resp;
 }
 
