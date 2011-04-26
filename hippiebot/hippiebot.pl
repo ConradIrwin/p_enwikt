@@ -1756,7 +1756,7 @@ sub do_linky {
     my $resp = undef;
 
     if ($channel) {
-        unless (grep $_ eq 'club_butler', $g_irc->channel_list($channel)) {
+        unless (grep $_ eq 'know-it-all', $g_irc->channel_list($channel)) {
             my @l = ($msg =~ /\[\[.*?\]\]/g);
             $resp = join(', ', map { 'http://en.wiktionary.org/wiki/' . uri_escape_utf8(substr $_, 2, -2) } @l);
         }
