@@ -15,8 +15,6 @@
 //
 // TODO config file should support separate dump and index paths
 // TODO prompt user if output files already exist
-// TODO decide frequency of progress reports from type and size of dump file
-// TODO make it possible to run steps separately
 // TODO write metadata to .txt file (number of pages, revs; max page offset, rev offset, number of bits needed for each)
 // TODO report more factoids: lowest page id, revision id, longest title
 // TODO support dump file coming via a pipe
@@ -28,6 +26,8 @@
 // TODO group all index files together in directory
 // TODO move dumplang, dumpproj, dumpdate into the options structure?
 // TODO specify name of config file on commandline?
+// TODO decide frequency of progress reports from type and size of dump file
+// TODO make it possible to run steps separately
 
 #include "stdafx.h"
 
@@ -55,7 +55,7 @@ static struct stringnode **	g_title_list_tail_address = &g_title_list_head;
 static char **g_title_array;
 
 // forward declarations
-int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE *all_txt_file, FILE *all_off_raw_file, const _TCHAR *all_idx_raw_filename);
+int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE *all_txt_file, FILE *all_off_raw_file, FILE *all_idx_raw_file);
 int check_range_and_length(const _TCHAR *s, _TCHAR minchar, _TCHAR maxchar, int minlen, int maxlen);
 _TCHAR *get_config_path(void);
 _TCHAR *get_config_filename(void);
@@ -124,7 +124,7 @@ int _tmain(int argc, _TCHAR* argv[])
 					all_idx_raw_filename = alloc_stprintf(_T("%s%s%s-all-idx.raw"), indexpath, dumplang, dumpdate);
 				}
 
-				if (dump_filename && off_raw_filename && all_txt_filename && all_off_raw_filename) {
+				if (dump_filename && off_raw_filename && all_txt_filename && all_off_raw_filename && all_idx_raw_filename) {
 
 					// open input file
 					FILE *dump_file = _tfopen(dump_filename, _T("rb"));					// crlf translation would interfere with ftell()
@@ -139,43 +139,52 @@ int _tmain(int argc, _TCHAR* argv[])
 						const _TCHAR *all_txt_state = NULL;
 						FILE *all_off_raw_file;
 						const _TCHAR *all_off_raw_state = NULL;
+                        FILE *all_idx_raw_file;
+                        const _TCHAR *all_idx_raw_state = NULL;
 
 						// check if output files already exist
 						off_raw_file = _tfopen(off_raw_filename, _T("rb"));
 						all_txt_file = _tfopen(all_txt_filename, _T("rb"));
 						all_off_raw_file = _tfopen(all_off_raw_filename, _T("rb"));
+                        all_idx_raw_file = _tfopen(all_idx_raw_filename, _T("rb"));
 
 						if (off_raw_file) off_raw_state = _T("overwrite");
 						if (all_txt_file) all_txt_state = _T("overwrite");
 						if (all_off_raw_file) all_off_raw_state = _T("overwrite");
+						if (all_idx_raw_file) all_idx_raw_state = _T("overwrite");
 
 						// close output files
 						if (off_raw_file) fclose(off_raw_file);
 						if (all_txt_file) fclose(all_txt_file);
 						if (all_off_raw_file) fclose(all_off_raw_file);
+						if (all_idx_raw_file) fclose(all_idx_raw_file);
 
 						// open output files for writing
 						off_raw_file = _tfopen(off_raw_filename, _T("wb"));			// raw binary data
 						all_txt_file = _tfopen(all_txt_filename, _T("wb"));			// crlf translation would interfere with ftell()
 						all_off_raw_file = _tfopen(all_off_raw_filename, _T("wb"));	// raw binary data
+                        all_idx_raw_file = _tfopen(all_idx_raw_filename, _T("wb"));	// raw binary data
 
 						if (!off_raw_state) off_raw_state = off_raw_file ? _T("create") : _T("error");
 						if (!all_txt_state) all_txt_state = all_txt_file ? _T("create") : _T("error");
 						if (!all_off_raw_state) all_off_raw_state = all_off_raw_file ? _T("create") : _T("error");
+						if (!all_idx_raw_state) all_idx_raw_state = all_idx_raw_file ? _T("create") : _T("error");
 
-						_ftprintf(stderr, _T("%s : %s\n%s : %s\n%s : %s\n"),
+						_ftprintf(stderr, _T("%s : %s\n%s : %s\n%s : %s\n%s : %s\n"),
 							off_raw_filename, off_raw_state,
 							all_txt_filename, all_txt_state,
-							all_off_raw_filename, all_off_raw_state);
+							all_off_raw_filename, all_off_raw_state,
+							all_idx_raw_filename, all_idx_raw_state);
 
-						if (off_raw_file && all_txt_file && all_off_raw_file) {
-							process_dump(opt.opt_d, opt.opt_h, dump_file, off_raw_file, all_txt_file, all_off_raw_file, all_idx_raw_filename);
+						if (off_raw_file && all_txt_file && all_off_raw_file && all_idx_raw_file) {
+							process_dump(opt.opt_d, opt.opt_h, dump_file, off_raw_file, all_txt_file, all_off_raw_file, all_idx_raw_file);
 						} /* if ( ... output files ... ) */
 
 						// close output files
 						if (off_raw_file) fclose(off_raw_file);
 						if (all_txt_file) fclose(all_txt_file);
 						if (all_off_raw_file) fclose(all_off_raw_file);
+						if (all_idx_raw_file) fclose(all_idx_raw_file);
 
 						// close input files
 						fclose(dump_file);
@@ -214,7 +223,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	return 0;
 }
 
-int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE *all_txt_file, FILE *all_off_raw_file, const _TCHAR *all_idx_raw_filename)
+int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE *all_txt_file, FILE *all_off_raw_file, FILE *all_idx_raw_file)
 {
 	int pc = 0;							// page count
 	int rc = 0;							// revision count for this page
@@ -429,31 +438,18 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	} /* while ( ... myreadline ... ) */
 
 	// sorting
-	{
-		// open output files
-		FILE *all_idx_raw_file = _tfopen(all_idx_raw_filename, _T("wb"));	// raw binary data
+    sort_titles(opt_d, pc, all_txt_file, all_idx_raw_file);
 
-		_ftprintf(stderr, _T("%s : %s\n"),
-			all_idx_raw_filename, all_idx_raw_file ? _T("yes") : _T("no"));
-
-		if (all_idx_raw_file) {
-			sort_titles(opt_d, pc, all_txt_file, all_idx_raw_file);
-		} /* if ( ... output files ... ) */
-
-		// close output files
-		if (all_idx_raw_file) fclose(all_idx_raw_file);
-
-		{
-			// free all the page titles
-			struct stringnode *item = g_title_list_head, *next;
-			
-			while (item != NULL) {
-				next = item->next;
-				free(item);
-				item = next;
-			}
-		}
-	}
+    {
+        // free all the page titles
+        struct stringnode *item = g_title_list_head, *next;
+        
+        while (item != NULL) {
+            next = item->next;
+            free(item);
+            item = next;
+        }
+    }
 
 	if (opt_d) {
 		int pobits = bits_needed(biggest_poff);
