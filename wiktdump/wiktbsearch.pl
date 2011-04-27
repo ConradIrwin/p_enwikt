@@ -20,6 +20,8 @@ use utf8;
 use strict;
 
 use Encode;
+use File::HomeDir;
+use File::Spec;
 use Getopt::Std;
 use Unicode::Normalize;
 
@@ -31,10 +33,15 @@ my $usethumb = 1;
 
 my %thumbindex;
 
-# TODO should be in config file
-#my $dumppath = "E:\\Archives\\wiktdump\\";
-#my $dumppath = "D:\\wiktdump\\";
-my $dumppath = '/mnt/user-store/';
+# read dump path from config file
+
+my $home = File::HomeDir->my_home;
+my $config_path = File::Spec->catfile($home, '.wikipath');
+
+open(my $cfh, '<:encoding(UTF-8)', $config_path) || die "can't open config file";
+my $dumppath = <$cfh>;
+chomp $dumppath;
+close $cfh;
 
 my ($dumplang, $date) = (shift, shift);
 
