@@ -234,9 +234,14 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	int most_revs = 0;
 	char *most_revs_title = NULL;
 
-	// TODO implement
 	int biggest_rid = -1;
+	int biggest_rid_pid = -1;
 	char *biggest_rid_title = NULL;
+
+	int smallest_rid = INT_MAX;
+	int smallest_rid_pid = -1;
+	char *smallest_rid_title = NULL;
+
 	char latest_timestamp[] = "0000-00-00";	// yyyy-mm-dd
 
 	int state = 0;
@@ -247,7 +252,6 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	int line_len;
 
 	while (line = myreadline(dump_file, &line_len)) {
-		// line_len = strlen(line);
 
 		if (state == 0) {
 			if (strstr(line, "<page>")) {
@@ -386,10 +390,26 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 				*p2 = '\0';
 
 				// only take the revision id, not the contributor id!
-				if (rid == -1)
+				if (rid == -1) {
 					rid = atoi(p1+4);
 
-				} else if (strstr(line, "</revision>")) {
+					if (rid > biggest_rid) {
+						biggest_rid = rid;
+						biggest_rid_pid = pid;
+						if (biggest_rid_title)
+							free(biggest_rid_title);
+						biggest_rid_title = _strdup(title);
+					} else if (rid < smallest_rid) {
+						smallest_rid = rid;
+						smallest_rid_pid = pid;
+						if (smallest_rid_title)
+							free(smallest_rid_title);
+						smallest_rid_title = _strdup(title);
+					}
+				}
+
+
+			} else if (strstr(line, "</revision>")) {
 				state = 2;
 			}
 
@@ -468,10 +488,32 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 		_ftprintf(stderr, _T("biggest page index: 0x%08x (%u) [needs %d bits, %d bytes]\n"),
 			pc-1, pc-1, idxbits, (idxbits-1)/8+1);
 		_ftprintf(stderr, _T("latest revision timestamp: %hs\n"), latest_timestamp);
+
+		{
+			_TCHAR *a;
+			_TCHAR *b;
+#ifdef _WIN32
+			a = _tcsdup_from_A(smallest_rid_title);
+			b = _tcsdup_from_A(biggest_rid_title);
+#else
+			a = smallest_rid_title;
+			b = biggest_rid_title;
+#endif
+			_ftprintf(stderr, _T("smallest revision id: %d (page id %d) \"%s\"\n"),
+				smallest_rid, smallest_rid_pid, a);
+			_ftprintf(stderr, _T("biggest revision id: %d (page id %d) \"%s\"\n"),
+				biggest_rid, biggest_rid_pid, b);
+#ifdef _WIN32
+			free(a);
+			free(b);
+#endif
+		}
 	}
 
 	if (biggest_roff_title) free(biggest_roff_title);
 	if (most_revs_title) free(most_revs_title);
+	if (biggest_rid_title) free(biggest_rid_title);
+	if (smallest_rid_title) free(smallest_rid_title);
 
 	// TODO return success/failure
 	return 1;
