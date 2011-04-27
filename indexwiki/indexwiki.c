@@ -227,16 +227,23 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	long txt_told;						// offset of title in -all.txt to write to -all-off.raw
 
 	seek_type biggest_poff = 0;
+
 	int biggest_roff = 0;
-	char *biggest_roff_title = NULL;	// since dumps are always UTF-8
+	char *biggest_roff_title = NULL;
+
 	int most_revs = 0;
 	char *most_revs_title = NULL;
+
+	// TODO implement
+	int biggest_rid = -1;
+	char *biggest_rid_title = NULL;
+	char latest_timestamp[] = "0000-00-00";	// yyyy-mm-dd
 
 	int state = 0;
 	int progress_modulo = opt_h ? 1000 : 10000;
 	int show_progress = 0;
 
-	char *line;							// since dumps are always UTF-8
+	char *line;								// since dumps are always UTF-8
 	int line_len;
 
 	while (line = myreadline(dump_file, &line_len)) {
@@ -374,7 +381,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 			}
 			// <redirect>, <restrictions> are possible
 		} else if (state == 3) {
-			char *p1, *p2;	// dump file is byte-based UTF-8
+			char *p1, *p2;
 			if ((p1 = strstr(line, "<id>")) != NULL && (p2 = strstr(p1, "</id>")) != NULL) {
 				*p2 = '\0';
 
@@ -385,6 +392,13 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 				} else if (strstr(line, "</revision>")) {
 				state = 2;
 			}
+
+            else if ((p1 = strstr(line, "<timestamp>")) != NULL && (p2 = strstr(p1, "</timestamp>")) != NULL) {
+                *(p1 + 11 + 10) = '\0';
+
+				if (strncmp(p1+11, latest_timestamp, 10) > 0)
+					memcpy(latest_timestamp, p1+11, 10);
+            }
 
 		} else {
 			if (opt_d)
@@ -453,6 +467,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 			txt_told, txt_told, txtbits, (txtbits-1)/8+1);
 		_ftprintf(stderr, _T("biggest page index: 0x%08x (%u) [needs %d bits, %d bytes]\n"),
 			pc-1, pc-1, idxbits, (idxbits-1)/8+1);
+		_ftprintf(stderr, _T("latest revision timestamp: %hs\n"), latest_timestamp);
 	}
 
 	if (biggest_roff_title) free(biggest_roff_title);
@@ -592,9 +607,7 @@ _TCHAR *get_config_filename(void)
 #endif
 
     if (config_path) {
-        // TODO check various config filenames with _taccess(path, 00). -1 means it doesn't exist
-        // TODO wiktpath is not a great name for people not doing wiktionaries
-        const _TCHAR *names[] = {_T(".wikipath"), _T("wikipath.txt"), _T("wiktpath.txt")};
+        const _TCHAR *names[] = { _T(".wikipath"), _T("wikipath.txt"), _T("wiktpath.txt") };
         int i;
         for (i = 0; i < sizeof(names); ++i) {
             if (config_filename) {
