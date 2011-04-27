@@ -7,10 +7,12 @@ import re
 import struct
 import sys  # for commandline arguments (sys.argv)
 
-if platform.system() == 'Windows':
-    dumppath = 'E:\\wikt\\'
-else:
-    dumppath = '/media/HIPSTER/wikt/'
+# read dump path from config file
+
+config_file_name = os.path.expanduser(os.path.join('~', '.wikipath'))
+config_file = open(config_file_name, encoding = 'UTF-8')
+config_line = config_file.readline().rstrip()
+dumppath = config_line;
 
 # parse commandline
 
@@ -63,7 +65,7 @@ if os.path.getsize(dumppath + dump.title_offset_file_name) == os.path.getsize(du
     index_record_size = int(index_record_size)
 
 else:
-    raise NameError('one')
+    raise NameError('size of all-off.raw does not match size of all-idx.raw')
 
 # search
 
