@@ -55,6 +55,10 @@ typedef __int64		seek_type;
 
 #else
 
+// *nix-specific includes
+
+# include <unistd.h>
+
 # if defined(sun) || defined(__sun)
 
 #  if defined(__SVR4) || defined(__svr4__)
