@@ -13,6 +13,7 @@
 
 // cross-platform includes
 
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,10 +54,6 @@ typedef __int64		seek_type;
 // ** *nix section **
 
 #else
-
-// *nix-specific includes
-
-# include <unistd.h>
 
 # if defined(sun) || defined(__sun)
 

@@ -365,7 +365,7 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 						_ftprintf(stderr, _T("%d (pid %d:rid %d) : 0x%016llx (%llu) : 0x%08x (%u) \"%s\" [%d revs]\n"),
 							pc, pid, rid, (unsigned long long)poff, (unsigned long long)poff, roff, roff, t, rc);
 #ifdef _WIN32
-						free(t);
+						free((void *)t);
 #endif
 					}
 					show_progress = 0;
@@ -479,10 +479,12 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 			free(b);
 #endif
 		}
-		_ftprintf(stderr, _T("biggest title offset: 0x%08x (%u) [needs %d bits, %d bytes]\n"),
+		_ftprintf(stderr, _T("biggest title offset: 0x%08lx (%ld) [needs %d bits, %d bytes]\n"),
 			txt_told, txt_told, txtbits, (txtbits-1)/8+1);
+			//(unsigned int)txt_told, (unsigned int)txt_told, txtbits, (txtbits-1)/8+1);
 		_ftprintf(stderr, _T("biggest page index: 0x%08x (%u) [needs %d bits, %d bytes]\n"),
 			pc-1, pc-1, idxbits, (idxbits-1)/8+1);
+        // TODO warning: use of ‘h’ length modifier with ‘s’ type character
 		_ftprintf(stderr, _T("latest revision timestamp: %hs\n"), latest_timestamp);
 
 		{
