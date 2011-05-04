@@ -3,6 +3,8 @@
 # wiktperlang indexfile dumpfile
 #
 # uses a binary index file to dump the section structure of all the pages from a dump file
+#
+# TODO support 64-bit indexes!
 
 use strict;
 use Encode;

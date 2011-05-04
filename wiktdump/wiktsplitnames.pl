@@ -3,8 +3,6 @@
 # wiktsplitnames indexfile dumpfile
 #
 # uses a binary index file to dump all the names from a dump file
-#
-# TODO support 64-bit indexes!
 
 use bignum;
 use strict;
