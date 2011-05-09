@@ -20,6 +20,7 @@ use utf8; # needed due to literal unicode for stripping diacritics
 use File::HomeDir;
 use Getopt::Std;
 use HTML::Entities;
+use HTML::Strip;
 use HTTP::Request::Common qw(GET);
 use JSON -support_by_pp;
 use LWP::Simple qw(get $ua);
@@ -66,6 +67,7 @@ my $g_suggest_id = 0;
 my $g_lang_id = 0;
 my $g_toc_id = 0;
 my $g_whatis_id = 0;
+my $g_whatis_id_2 = 0;
 
 # slurp dumped enwikt language code : name mappings
 my %g_enwikt;
@@ -294,6 +296,7 @@ POE::Session->create(
         sugg_response     => \&on_sugg_response,
         toc_response      => \&on_toc_response,
         whatis_response   => \&on_whatis_response,
+        whatis_response_2 => \&on_whatis_response_2,
     },
 );
 
@@ -1843,12 +1846,14 @@ sub on_whatis_response {
                                 if ($langname eq 'Translingual') {
                                     if ($resp eq undef) {
                                         $resp = $page . ': ' . $langname . '/' . $heading . ': ' . $def;
+                                        $ok = 1;
                                         print STDERR "** first translingual def\n";
                                     }
                                 # get the first def of the first real language
                                 } else {
                                     if ($langname eq 'English' || !defined $resp) {
-                                        $resp = $page . ': ' . $langname . '/' . $heading . ': ' . $def;
+                                        $resp = $page . ': ' . $langname . ' ' . $heading . ': ' . $def;
+                                        $ok = 1;
                                         print STDERR "** first def that's not translingual\n";
                                         last;
                                     }
@@ -1869,14 +1874,64 @@ sub on_whatis_response {
 
     hippbotlog('whatis', '', $ok);
 
-    if (defined $whatisreq->{channel} && defined $whatisreq->{nick}) {
-        $g_irc->yield( privmsg => $whatisreq->{channel}, $whatisreq->{nick} . ': ' . $resp );
-    } elsif (defined $whatisreq->{channel}) {
-        $g_irc->yield( privmsg => $whatisreq->{channel}, $resp );
-    } elsif (defined $whatisreq->{nick}) {
-        $g_irc->yield( privmsg => $whatisreq->{nick}, $resp );
+    if ($ok) {
+        my $uri = 'http://en.wiktionary.org/w/api.php?format=json&action=parse&prop=text&disablepp&title=' . $page . '&text=' . $resp;
+
+        my $id = $g_whatis_id_2 ++;
+
+        $heap->{whatis_2}->[$id] = { channel => $whatisreq->{channel}, nick => $whatisreq->{nick}, page => $page };
+
+        post_json_req(
+            $kernel, $heap,
+            'whatis_response_2',
+            GET ($uri),
+            $id);
     } else {
-        print STDERR "** whatis no channel or nick impossible!\n";
+        if (defined $whatisreq->{channel} && defined $whatisreq->{nick}) {
+            $g_irc->yield( privmsg => $whatisreq->{channel}, $whatisreq->{nick} . ': ' . $resp );
+        } elsif (defined $whatisreq->{channel}) {
+            $g_irc->yield( privmsg => $whatisreq->{channel}, $resp );
+        } elsif (defined $whatisreq->{nick}) {
+            $g_irc->yield( privmsg => $whatisreq->{nick}, $resp );
+        } else {
+            print STDERR "** whatis no channel or nick impossible!\n";
+        }
+    }
+}
+
+sub on_whatis_response_2 {
+    my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
+
+    my $whatisreq_2 = $heap->{whatis_2}->[$id];
+    my $page = $whatisreq_2->{page};
+
+    my $ok = 0;
+    my $resp = undef;
+
+    if (my $data = $ref) {
+        if (exists $data->{parse} && exists $data->{parse}->{text}) {
+            my $html = $data->{parse}->{text}->{'*'};
+
+            my $hs = HTML::Strip->new();
+            my $plain = $hs->parse($html);
+
+            $resp = $plain;
+            $ok = 1;
+        } else {
+            print STDERR "** whatis: JSON data missing parse/text fields\n";
+        }
+    } else { print STDERR "** whatis_2: $http_code : $err\n"; }
+
+    hippbotlog('whatis_2', '', $ok);
+
+    if (defined $whatisreq_2->{channel} && defined $whatisreq_2->{nick}) {
+        $g_irc->yield( privmsg => $whatisreq_2->{channel}, $whatisreq_2->{nick} . ': ' . $resp );
+    } elsif (defined $whatisreq_2->{channel}) {
+        $g_irc->yield( privmsg => $whatisreq_2->{channel}, $resp );
+    } elsif (defined $whatisreq_2->{nick}) {
+        $g_irc->yield( privmsg => $whatisreq_2->{nick}, $resp );
+    } else {
+        print STDERR "** whatis_2 no channel or nick impossible!\n";
     }
 }
 
