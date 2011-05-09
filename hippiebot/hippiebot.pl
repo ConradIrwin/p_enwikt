@@ -65,6 +65,7 @@ my $g_suggest_id = 0;
 
 my $g_lang_id = 0;
 my $g_toc_id = 0;
+my $g_whatis_id = 0;
 
 # slurp dumped enwikt language code : name mappings
 my %g_enwikt;
@@ -292,6 +293,7 @@ POE::Session->create(
         lang_response     => \&on_lang_response,
         sugg_response     => \&on_sugg_response,
         toc_response      => \&on_toc_response,
+        whatis_response   => \&on_whatis_response,
     },
 );
 
@@ -675,7 +677,7 @@ sub on_siteinfo_timer {
 
 # handle an incoming siteinfo
 sub on_siteinfo_response {
-    my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
+    my ($kernel, $heap, undef, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
 
     my $was_working = defined $heap->{siteinfo}->{working} ? $heap->{siteinfo}->{working} : -1;
     my $is_working = $heap->{siteinfo}->{working} = defined $ref;
@@ -757,7 +759,7 @@ sub on_ts_ping_timer {
 
 # handle an incoming ts_ping
 sub on_ts_ping_response {
-    my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
+    my ($kernel, $heap, undef, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
 
     if (defined $ref) {
         if (exists $ref->{pong}) {
@@ -848,6 +850,9 @@ sub do_command {
         $resps->[0] = $resp if defined $resp;
     } elsif ( ($args) = $msg =~ /^toc\s+(.+)\s*$/ ) {
         my $resp = do_toc($kernel, $heap, $channel, $nick, $args);
+        $resps->[0] = $resp if defined $resp;
+    } elsif ( ($args) = $msg =~ /^whatis\s+(.+)\s*$/ ) {
+        my $resp = do_whatis($kernel, $heap, $channel, $nick, $args);
         $resps->[0] = $resp if defined $resp;
     }
 
@@ -1160,6 +1165,8 @@ sub do_dumps {
             /^(.*)\t(.*)\t(.*)$/;
             $1 . ': ' . $2 . ' (' . duration(time - $3) . ' ago)';
         } @dat);
+    } else {
+        $resp .= ' (' . @dat . ')';
     }
     hippbotlog('dumps', '', $ok);
 
@@ -1762,6 +1769,115 @@ sub do_linky {
         }
     }
     return $resp;
+}
+
+# ASYNCHRONOUS
+sub do_whatis {
+    my ( $kernel, $heap, $channel, $nick, $page ) = @_;
+
+    my $uri = 'http://en.wiktionary.org/w/api.php?action=query&prop=revisions&rvlimit=1&rvprop=content&format=json&titles=' . $page;
+
+    my $id = $g_whatis_id ++;
+
+    $heap->{whatis}->[$id] = { channel => $channel, nick => $nick, page => $page };
+
+    post_json_req(
+        $kernel, $heap,
+        'whatis_response',
+        GET ($uri),
+        $id);
+
+    return undef;
+}
+
+sub on_whatis_response {
+    my ($kernel, $heap, $id, $http_code, $ref, $err) = @_[KERNEL, HEAP, ARG0, ARG1, ARG2, ARG3];
+
+    my $whatisreq = $heap->{whatis}->[$id];
+    my $page = $whatisreq->{page};
+
+    my $ok = 0;
+    my $resp = undef;
+
+    if (my $data = $ref) {
+        if (exists $data->{query} && exists $data->{query}->{pages}) {
+            my $key = (keys %{$data->{query}->{pages}})[0];
+
+            if ($key == -1) {
+                $resp = $page . ': doesn\'t exist';
+            } else {
+                my $ns = $data->{query}->{pages}->{$key}->{ns};
+
+                if ($ns == 0) {
+                    my $text = $data->{query}->{pages}->{$key}->{revisions}->[0]->{'*'};
+
+                    my $langnum = 0;
+                    my $langname = undef;
+                    my $heading = undef;
+                    my $depth = -1;
+                    my $def = undef;
+
+                    while ($text =~ /(.+)$/mg) {
+                        my $l = $1;
+                        if ($l =~ /^==\s*([^=]+?)\s*==\s*$/) {
+                            ++ $langnum;
+                            last if $langnum > 2;
+
+                            $langname = $1;
+
+                            $heading = undef;
+                            $depth = -1;
+                            $def = undef;
+                        } elsif ($l =~ /^(===+)\s*([^=]+?)\s*\1\s*$/) {
+                            $depth = length $1;
+                            $heading = $2;
+                            
+                            $depth = -1;
+                            $def = undef;
+                        } elsif ($l =~ /^#\s*(.*?)\s*$/) {
+                            if (defined $langname) {
+                                $def = $1;
+                                print "** ($langnum) $langname/$heading '$def'\n";
+
+                                # get the first translingual def but keep looking
+                                if ($langname eq 'Translingual') {
+                                    if ($resp eq undef) {
+                                        $resp = $page . ': ' . $langname . '/' . $heading . ': ' . $def;
+                                        print STDERR "** first translingual def\n";
+                                    }
+                                # get the first def of the first real language
+                                } else {
+                                    if ($langname eq 'English' || !defined $resp) {
+                                        $resp = $page . ': ' . $langname . '/' . $heading . ': ' . $def;
+                                        print STDERR "** first def that's not translingual\n";
+                                        last;
+                                    }
+                                }
+                            } else {
+                                print STDERR "** found # line without language name: possibly a redirect\n";
+                            }
+                        }
+                    }
+                } else {
+                    $resp = $page . ': not a valid entry title';
+                }
+            }
+        } else {
+            print STDERR "** whatis: JSON data missing query/pages fields\n";
+        }
+    } else { print STDERR "** whatis: $http_code : $err\n"; }
+
+    hippbotlog('whatis', '', $ok);
+
+    if (defined $whatisreq->{channel} && defined $whatisreq->{nick}) {
+        $g_irc->yield( privmsg => $whatisreq->{channel}, $whatisreq->{nick} . ': ' . $resp );
+    } elsif (defined $whatisreq->{channel}) {
+        $g_irc->yield( privmsg => $whatisreq->{channel}, $resp );
+    } elsif (defined $whatisreq->{nick}) {
+        $g_irc->yield( privmsg => $whatisreq->{nick}, $resp );
+    } else {
+        print STDERR "** whatis no channel or nick impossible!\n";
+    }
 }
 
 ####
