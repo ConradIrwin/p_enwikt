@@ -1450,13 +1450,13 @@ sub do_suggest {
     my $kernel = shift;
     my $channel = shift;
     my $nick = shift;
-    my $term = shift;
+    my $rawterm = shift;
 
     ## which scripts are used in this term
 
     my %script;
 
-    my @ch = split //, $term;
+    my @ch = split //, $rawterm;
     for my $ch (@ch) {
         my $s = charscript(ord $ch);
         ++ $script{$s}
@@ -1523,7 +1523,7 @@ sub do_suggest {
     }
 
     # we no longer need the UTF-8 term so encode it for use in URLs
-    $term = uri_escape_utf8($term);
+    my $term = uri_escape_utf8($rawterm);
 
     # TODO use heap
     my $suggq = $g_suggests{$g_suggest_id} = {
@@ -1598,7 +1598,7 @@ sub do_suggest {
         'my-http', 'request',
         'sugg_response',
         GET ($url),
-        $g_suggest_id . '.' . 'nearby' . '-' . '*' . '-' . $term);
+        $g_suggest_id . '.' . 'nearby' . '-' . '*' . '-' . $rawterm);
 
     ++ $suggq->{numresps};
 
@@ -1612,7 +1612,7 @@ sub do_suggest {
 sub on_sugg_response {
     my ($kernel, $heap, $request_packet, $response_packet) = @_[KERNEL, HEAP, ARG0, ARG1];
 
-    my $sugg_req_id     = $request_packet->[1];
+    my $sugg_req_id = $request_packet->[1];
     my $http_response = $response_packet->[0];
 
     $sugg_req_id =~ /^(\d+)\.(.*)-(.*)-(.*)$/;
@@ -1719,7 +1719,7 @@ sub on_sugg_response {
         }
 
         if ($sugg) {
-            $resp = 'did you mean ' . $sugg . ' ?';
+            $resp = $term . ': did you mean ' . $sugg . ' ?';
             # IRC -> ANSI colour conversion
             $sugg =~ s/\00301/\e[0m/g; # IRC black / ANSI white
             $sugg =~ s/\00302/\e[34m/g; # red
@@ -1807,7 +1807,7 @@ sub on_whatis_response {
             my $key = (keys %{$data->{query}->{pages}})[0];
 
             if ($key == -1) {
-                $resp = $page . ': doesn\'t exist';
+                $resp = do_suggest($kernel, $whatisreq->{channel}, $whatisreq->{nick}, $page);
             } else {
                 my $ns = $data->{query}->{pages}->{$key}->{ns};
 
@@ -1860,6 +1860,7 @@ sub on_whatis_response {
                                 }
                             } else {
                                 print STDERR "** found # line without language name: possibly a redirect\n";
+                                $resp = $page . ': might be a redirect';
                             }
                         }
                     }
