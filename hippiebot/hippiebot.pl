@@ -1423,7 +1423,7 @@ sub do_define {
             } elsif ($cb) {
                 $resp = 'try ".?" instead of "define"';
             } else {
-                $resp = 'too bad know-it-all isn\'t here';
+                $resp = 'try "whatis" instead of "define"';
             }
         } elsif ($bot eq 'club_butler') {
             if ($cb) {
@@ -1435,7 +1435,7 @@ sub do_define {
             } elsif ($kia) {
                 $resp = 'try "define" instead of ".?"';
             } else {
-                $resp = 'too bad club_butler isn\'t here';
+                $resp = 'try "whatis" instead of ".?"';
             }
         }
     }
@@ -1522,7 +1522,7 @@ sub do_suggest {
         }
     }
 
-    # we no longer need the UTF-8 term so encode it for use in URLs
+    # we need to encode the term for use in URLs
     my $term = uri_escape_utf8($rawterm);
 
     # TODO use heap
