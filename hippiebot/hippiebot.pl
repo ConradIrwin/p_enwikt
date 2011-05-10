@@ -716,9 +716,35 @@ sub on_siteinfo_response {
                     } else {
                         if ($oldval eq '(undefined)') {
                             unless ($was_working == -1) {
-                                $info = "siteinfo has a new field '$field'";
-                                print STDERR "** $info\n";
-                                $g_irc->yield( privmsg => '#hippiebot', $info );
+                                if ($field eq 'readonly') {
+                                    $info = 'Wiktionary has entered readonly mode with reason "' . $ref->{query}->{general}->{readonlyreason} . '"';
+                                    print STDERR "** $info\n";
+                                    foreach my $ch (@{$g_hippiebot{channels}}) {
+                                        $g_irc->yield( privmsg => $ch, $info );
+                                    }
+                                } elsif ($field eq 'readonlyreason') {
+                                    # do nothing, we handled it above
+                                } else {
+                                    $info = "siteinfo has a new field '$field'";
+                                    print STDERR "** $info\n";
+                                    $g_irc->yield( privmsg => '#hippiebot', $info );
+                                }
+                            }
+                        } elsif ($newval eq '(undefined)') {
+                            unless ($was_working == -1) {
+                                if ($field eq 'readonly') {
+                                    $info = "Wiktionary has returned to read/write mode";
+                                    print STDERR "** $info\n";
+                                    foreach my $ch (@{$g_hippiebot{channels}}) {
+                                        $g_irc->yield( privmsg => $ch, $info );
+                                    }
+                                } elsif ($field eq 'readonlyreason') {
+                                    # do nothing, we handled it above
+                                } else {
+                                    $info = "siteinfo has lost the field '$field'";
+                                    print STDERR "** $info\n";
+                                    $g_irc->yield( privmsg => '#hippiebot', $info );
+                                }
                             }
                         } else {
                             unless (grep $_ eq $field, @g_siteinfo_ignore_fields) {
@@ -731,7 +757,6 @@ sub on_siteinfo_response {
                             }
                         }
 
-                        #print STDERR "** caching new change '$changekey'\n";
                         $heap->{siteinfo}->{changecache}->{$changekey} = 1;
                     }
                 }
@@ -1399,6 +1424,7 @@ sub on_gf_response {
 
 # handle know-it-all define and club_butler .?
 # if a commmand is used but the bot is missing and the other is here suggest the other bot's command
+# TODO when using the command of an absent bot we should just go straight ahead and treat it as the whatis command
 sub do_define {
     my $channel = shift;
     my $bot = shift;
