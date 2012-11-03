@@ -250,7 +250,7 @@ my @g_feeds = (
 
 # XXX move to %g_hippiebot or heap?
 my $g_siteinfo_delay = defined $opt_d ? 15 : 5 * 60;
-my @g_siteinfo_ignore_fields = defined $opt_d ? ( 'time' ) : ( 'time', 'dbversion' );
+my @g_siteinfo_ignore_fields = defined $opt_d ? ( 'fallback', 'time' ) : ( 'fallback', 'time', 'dbversion' );
 
 my %g_siteinfo_cache;
 
