@@ -13,6 +13,7 @@
 //	xxx-all-idx.raw
 //		an "unsigned long" (32 bit) index of the position each page title is in after sorting
 //
+// TODO for each page store in a new index the namespace and whether tha page is a redirect
 // TODO config file should support separate dump and index paths
 // TODO prompt user if output files already exist
 // TODO write metadata to .txt file (number of pages, revs; max page offset, rev offset, number of bits needed for each)
@@ -263,6 +264,9 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 	while (line = myreadline(dump_file, &line_len)) {
 
 		if (state == 0) {
+
+            // TODO analyse the namespace declarations
+
 			if (strstr(line, "<page>")) {
 				if ((pc % progress_modulo) == 0)
 					show_progress = 1;
@@ -302,13 +306,18 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 				*p2 = '\0';
 
 				title = strdup_to_list(&g_title_list_tail_address, p1 + 7);
+
+                // TODO figure out namespace (possibly nonzero if title contains a colon ":")
 				
 			} else if ((p1 = strstr(line, "<id>")) != NULL && (p2 = strstr(p1, "</id>")) != NULL) {
 				*p2 = '\0';
 				pid = atoi(p1+4);
 				
 			}
+
 			// # <redirect>, <restrictions> are possible
+            // TODO is it a redirect or not
+            // TODO write into a new index file the namespace and redirect status
 
 			if (title != NULL && pid != -1)
 				state = 2;
@@ -484,7 +493,6 @@ int process_dump(int opt_d, int opt_h, FILE *dump_file, FILE *off_raw_file, FILE
 			//(unsigned int)txt_told, (unsigned int)txt_told, txtbits, (txtbits-1)/8+1);
 		_ftprintf(stderr, _T("biggest page index: 0x%08x (%u) [needs %d bits, %d bytes]\n"),
 			pc-1, pc-1, idxbits, (idxbits-1)/8+1);
-        // TODO warning: use of ‘h’ length modifier with ‘s’ type character
 		_ftprintf(stderr, _T("latest revision timestamp: %hs\n"), latest_timestamp);
 
 		{
