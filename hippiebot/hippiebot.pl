@@ -250,7 +250,7 @@ my @g_feeds = (
 
 # XXX move to %g_hippiebot or heap?
 my $g_siteinfo_delay = defined $opt_d ? 15 : 5 * 60;
-my @g_siteinfo_ignore_fields = defined $opt_d ? ( 'fallback', 'time' ) : ( 'fallback', 'time', 'dbversion' );
+my @g_siteinfo_ignore_fields = defined $opt_d ? ( 'fallback', 'git-hash', 'time' ) : ( 'fallback', 'git-hash', 'time', 'dbversion' );
 
 my %g_siteinfo_cache;
 
@@ -711,7 +711,7 @@ sub on_siteinfo_response {
 
                 if ($oldval ne $newval) {
                     if (defined $heap->{siteinfo}->{changecache}->{$changekey}) {
-                        #print STDERR "** seen this change before '$changekey'\n";
+                        print STDERR "** seen this change before '$changekey'\n";
 
                     } else {
                         if ($oldval eq '(undefined)') {
@@ -1388,8 +1388,9 @@ sub on_gf_response {
 
     # parse html
     my $pattern = $site eq 'g'
-        ? '<div id=resultStats>\D* ([0-9,.]+) \D*<nobr>'
-        : '<span class="sb_count" id="count">1-\d+ .*? ([0-9\.]+) .*?<\/span>';
+        ? '<div id="resultStats">\D* ([0-9,.]+) [^<]*<'
+        : '<span class="sb_count" id="count">([0-9\.]+) [^<]*<';
+
     if ($http_response->decoded_content =~ /$pattern/) { # }
         $fight->{terms}->{$term} = [$1, $1];
         $fight->{terms}->{$term}->[1] =~ s/[,.]//g;
