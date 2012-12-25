@@ -4,6 +4,78 @@ var fs   = require('fs'),
     path = require('path'),
     util = require('util');
 
+function getArticle(files, indexS, gotArticle) {
+  var haystackLen = files.to.byteLen / 4;
+  var indexR = new Buffer(4), record = new Buffer(12), chunk = new Buffer(1024);
+
+  if (indexS < 0 || indexS >= haystackLen) {
+    if (indexS === -1) {
+      gotTitle('** beginning of list **');
+    } else if (indexS === haystackLen) {
+      gotTitle('** end of list **');
+    } else {
+      throw 'sorted index ' + indexS + ' out of range';
+    }
+  } else {
+    fs.read(files.st.fd, indexR, 0, 4, indexS * 4, function (err, bytesRead, data) {
+      if (!err && bytesRead === 4) {
+        if (data.readUInt32LE !== undefined) {
+          indexR = data.readUInt32LE(0);
+        } else {
+          indexR = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
+        }
+
+        //                               * 3 ??
+        if (indexR < 0 || indexR >= haystackLen) throw 'raw index ' + indexR + ' out of range (sorted index ' + indexS + ')';
+
+        fs.read(files.do.fd, record, 0, 12, indexR * 12, function (err, bytesRead, data) {
+          if (!err && bytesRead === 12) {
+            var lower, upper, offset, extra;
+
+            if (data.readUInt32LE !== undefined) {
+              lower = data.readUInt32LE(0);
+              upper = data.readUInt32LE(4);
+              offset = upper * (2^32) + lower;
+              extra = data.readUInt32LE(8);
+            } else {
+              lower = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
+              upper = data[7] << 24 | data[6] << 16 | data[5] << 8 | data[4];
+              offset = upper * (2^32) + lower;
+              extra = data[12] << 24 | data[11] << 16 | data[9] << 8 | data[8];
+            }
+
+            // skip to latest <revision>
+            offset += extra;
+
+            console.log('u:l', upper + ':' + lower);
+            console.log('off', offset);
+            console.log('ext', extra);
+
+            offset = 0x7fffffff;
+            console.log(offset);
+
+            offset++;
+            console.log(offset);
+            
+            if (offset < 0 || offset >= files.d.byteLen) throw 'dump offset ' + offset + ' out of range';
+
+            fs.read(files.d.fd, chunk, 0, 1023, offset, function (err, bytesRead, data) {
+              if (!err && bytesRead > 0) {
+                var article = data.toString('utf-8');
+
+                gotArticle(article);
+              } else {
+                console.log('dump read err, bytesRead', err, bytesRead);
+              }
+            });
+
+          }
+        });
+      } else { throw ['indexR', err, bytesRead]; }
+    });
+  }
+}
+
 function getTitle(files, indexS, gotTitle) {
   var haystackLen = files.to.byteLen / 4;
   var indexR = new Buffer(4), offset = new Buffer(4), title = new Buffer(256);
@@ -207,6 +279,9 @@ path.exists(wikipathpath, function (x) {
                                 if (result.a === result.b) {
                                   getTitle(files, result.a, function (t) {
                                     console.log('"' + searchTerm + '" found at ' + result.a);
+                                    var article = getArticle(files, result.a, function (a) {
+                                      console.log('article\n', a, '\n');
+                                    });
                                   });
                                 } else {
                                   getTitle(files, result.a, function (t) {
