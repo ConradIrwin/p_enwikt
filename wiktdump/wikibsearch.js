@@ -4,6 +4,8 @@ var fs   = require('fs'),
     path = require('path'),
     util = require('util');
 
+var supportsBigFiles = process.version.substring(1).split('.') >= [0,7,9];
+
 function getArticle(files, indexS, gotArticle) {
   var haystackLen = files.to.byteLen / 4;
   var indexR = new Buffer(4), record = new Buffer(12), chunk = new Buffer(1024);
@@ -22,7 +24,7 @@ function getArticle(files, indexS, gotArticle) {
         if (data.readUInt32LE !== undefined) {
           indexR = data.readUInt32LE(0);
         } else {
-          indexR = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
+          indexR = data[3] * Math.pow(2, 24) + data[2] * Math.pow(2, 16) + data[1] * Math.pow(2, 8) + data[0];
         }
 
         //                               * 3 ??
@@ -35,29 +37,23 @@ function getArticle(files, indexS, gotArticle) {
             if (data.readUInt32LE !== undefined) {
               lower = data.readUInt32LE(0);
               upper = data.readUInt32LE(4);
-              offset = upper * (2^32) + lower;
+              offset = upper * (Math.pow(2, 32)) + lower;
               extra = data.readUInt32LE(8);
             } else {
-              lower = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
-              upper = data[7] << 24 | data[6] << 16 | data[5] << 8 | data[4];
-              offset = upper * (2^32) + lower;
-              extra = data[12] << 24 | data[11] << 16 | data[9] << 8 | data[8];
+              lower = data[3] * Math.pow(2, 24) + data[2] * Math.pow(2, 16) + data[1] * Math.pow(2, 8) + data[0];
+              upper = data[7] * Math.pow(2, 24) + data[6] * Math.pow(2, 16) + data[5] * Math.pow(2, 8) + data[4];
+              offset = upper * Math.pow(2, 32) + lower;
+              extra = data[11] * Math.pow(2, 24) + data[10] * Math.pow(2, 16) + data[9] * Math.pow(2, 8) + data[8];
             }
 
             // skip to latest <revision>
             offset += extra;
 
-            console.log('u:l', upper + ':' + lower);
-            console.log('off', offset);
-            console.log('ext', extra);
-
-            offset = 0x7fffffff;
-            console.log(offset);
-
-            offset++;
-            console.log(offset);
-            
             if (offset < 0 || offset >= files.d.byteLen) throw 'dump offset ' + offset + ' out of range';
+
+            if (!supportsBigFiles && offset > 0x7fffffff) {
+              throw 'offsets >= 2^31 are too big for node.js ' + process.version;
+            }
 
             fs.read(files.d.fd, chunk, 0, 1023, offset, function (err, bytesRead, data) {
               if (!err && bytesRead > 0) {
@@ -94,7 +90,7 @@ function getTitle(files, indexS, gotTitle) {
         if (data.readUInt32LE !== undefined) {
           indexR = data.readUInt32LE(0);
         } else {
-          indexR = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
+          indexR = data[3] * Math.pow(2, 24) + data[2] * Math.pow(2, 16) + data[1] * Math.pow(2, 8) + data[0];
         }
 
         if (indexR < 0 || indexR >= haystackLen) throw 'raw index ' + indexR + ' out of range (sorted index ' + indexS + ')';
@@ -104,7 +100,7 @@ function getTitle(files, indexS, gotTitle) {
             if (data.readUInt32LE !== undefined) {
               offset = data.readUInt32LE(0);
             } else {
-              offset = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
+              offset = data[3] * Math.pow(2, 24) + data[2] * Math.pow(2, 16) + data[1] * Math.pow(2, 8) + data[0];
             }
 
             if (offset < 0 || offset >= files.t.byteLen) throw 'title offset ' + offset + ' out of range';
