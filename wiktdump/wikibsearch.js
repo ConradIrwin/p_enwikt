@@ -19,13 +19,21 @@ function getTitle(files, indexS, gotTitle) {
   } else {
     fs.read(files.st.fd, indexR, 0, 4, indexS * 4, function (err, bytesRead, data) {
       if (!err && bytesRead === 4) {
-        indexR = data.readUInt32LE(0);
+        if (data.readUInt32LE !== undefined) {
+          indexR = data.readUInt32LE(0);
+        } else {
+          indexR = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
+        }
 
         if (indexR < 0 || indexR >= haystackLen) throw 'raw index ' + indexR + ' out of range (sorted index ' + indexS + ')';
 
         fs.read(files.to.fd, offset, 0, 4, indexR * 4, function (err, bytesRead, data) {
           if (!err && bytesRead === 4) {
-            offset = data.readUInt32LE(0);
+            if (data.readUInt32LE !== undefined) {
+              offset = data.readUInt32LE(0);
+            } else {
+              offset = data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0];
+            }
 
             if (offset < 0 || offset >= files.t.byteLen) throw 'title offset ' + offset + ' out of range';
 
@@ -100,7 +108,15 @@ var home = process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'],
 path.exists(wikipathpath, function (x) {
   if (x) {
     var str = fs.createReadStream(wikipathpath, {start: 0, end: 1023}),
-        wikipath = '';
+        wikipath = '',
+        indexpath = '';
+
+    // TODO ~/.wikipath only has wikipath - indexpath hardcoded for now!
+    if (process.platform === 'sunos') {
+      indexpath = '/mnt/user-store/hippietrail/';
+    } else {
+      indexpath = wikipath;
+    }
 
     str.on('data', function (data) {
       wikipath = data.toString('utf-8').replace(/^\s*(.*?)\s*$/, '$1');
@@ -132,11 +148,38 @@ path.exists(wikipathpath, function (x) {
               var left = Object.keys(files).length;
               for (var k in files) {
                 (function (e) {
-                  var p = util.format(e.fmt, wikipath, wikiLang, wikiDate);
+                  var p;
+
+                  if (util.format !== undefined) {
+                    // recent node.js version - running on my Windows box
+                    // TODO doesn't support separate wikipath and indexpath
+                    p = util.format(e.fmt, wikipath, wikiLang, wikiDate);
+                  } else {
+                    // old node.js version - running on toolserver (sunos)
+                    switch (k) {
+                      case 'd':
+                        p = wikipath + wikiLang + wikiProj + '-' + wikiDate + '-pages-articles.xml';
+                        break;
+                      case 'do':
+                        p = indexpath + wikiLang + wikiDate + '-off.raw';
+                        break;
+                      case 't':
+                        p = indexpath + wikiLang + wikiDate + '-all.txt';
+                        break;
+                      case 'to':
+                        p = indexpath + wikiLang + wikiDate + '-all-off.raw';
+                        break;
+                      case 'st':
+                        p = indexpath + wikiLang + wikiDate + '-all-idx.raw';
+                        break;
+                      default:
+                        throw 'mystery file';
+                    }
+                  }
 
                   fs.open(p, 'r', function (err, fd) {
                     if (err) {
-                      console.error('error opening ' + e.desc + ' file (' + e.fmt + '): ' + err);
+                      console.error('error opening ' + e.desc + ' file): ' + err);
                     } else {
                       e.fd = fd;
                       fs.fstat(fd, function (err, stats) {
