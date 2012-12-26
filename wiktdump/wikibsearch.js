@@ -30,21 +30,21 @@ function getArticle(files, indexS, gotArticle) {
 
         fs.read(files.do.fd, record, 0, 12, indexR * 12, function (err, bytesRead, data) {
           if (!err && bytesRead === 12) {
-            var lower, upper, offset, extra;
+            var lower, upper, offset, revisionOffset;
 
             if (data.readUInt32LE !== undefined) {
               lower = data.readUInt32LE(0);
               upper = data.readUInt32LE(4);
-              extra = data.readUInt32LE(8);
+              revisionOffset = data.readUInt32LE(8);
             } else {
               lower = data[3] * Math.pow(2, 24) + data[2] * Math.pow(2, 16) + data[1] * Math.pow(2, 8) + data[0];
               upper = data[7] * Math.pow(2, 24) + data[6] * Math.pow(2, 16) + data[5] * Math.pow(2, 8) + data[4];
-              extra = data[11] * Math.pow(2, 24) + data[10] * Math.pow(2, 16) + data[9] * Math.pow(2, 8) + data[8];
+              revisionOffset = data[11] * Math.pow(2, 24) + data[10] * Math.pow(2, 16) + data[9] * Math.pow(2, 8) + data[8];
             }
             offset = upper * Math.pow(2, 32) + lower;
 
             // skip to latest <revision>
-            offset += extra;
+            offset += revisionOffset;
 
             if (offset < 0 || offset >= files.d.byteLen) throw 'dump offset ' + offset + ' out of range';
 
@@ -62,9 +62,16 @@ function getArticle(files, indexS, gotArticle) {
                   var end = slab.indexOf('</revision>');
 
                   if (end !== -1) {
+                    // TODO there's probably a corner case where a chunk ends right between the > and \n
                     end = slab.indexOf('\n', end);
                     if (end !== -1) {
-                      gotArticle(slab.substring(0, end + 1));
+                      var revision = slab.substring(0, end + 1);
+                      var mch = revision.match(/<text[^>]*>([\s\S]*)<\/text>/m);
+                      if (mch) {
+                        gotArticle(mch[1]);
+                      } else {
+                        throw 'got revision but didn\'t extract text';
+                      }
                     } else {
                       throw 'didn\'t get \\n';
                     }
