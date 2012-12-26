@@ -1,7 +1,6 @@
 'use strict';
 
 var fs   = require('fs'),
-    path = require('path'),
     util = require('util');
 
 var supportsBigFiles = process.version.substring(1).split('.') >= [0,7,9];
@@ -27,7 +26,6 @@ function getArticle(files, indexS, gotArticle) {
           indexR = data[3] * Math.pow(2, 24) + data[2] * Math.pow(2, 16) + data[1] * Math.pow(2, 8) + data[0];
         }
 
-        //                               * 3 ??
         if (indexR < 0 || indexR >= haystackLen) throw 'raw index ' + indexR + ' out of range (sorted index ' + indexS + ')';
 
         fs.read(files.do.fd, record, 0, 12, indexR * 12, function (err, bytesRead, data) {
@@ -37,14 +35,13 @@ function getArticle(files, indexS, gotArticle) {
             if (data.readUInt32LE !== undefined) {
               lower = data.readUInt32LE(0);
               upper = data.readUInt32LE(4);
-              offset = upper * (Math.pow(2, 32)) + lower;
               extra = data.readUInt32LE(8);
             } else {
               lower = data[3] * Math.pow(2, 24) + data[2] * Math.pow(2, 16) + data[1] * Math.pow(2, 8) + data[0];
               upper = data[7] * Math.pow(2, 24) + data[6] * Math.pow(2, 16) + data[5] * Math.pow(2, 8) + data[4];
-              offset = upper * Math.pow(2, 32) + lower;
               extra = data[11] * Math.pow(2, 24) + data[10] * Math.pow(2, 16) + data[9] * Math.pow(2, 8) + data[8];
             }
+            offset = upper * Math.pow(2, 32) + lower;
 
             // skip to latest <revision>
             offset += extra;
@@ -55,16 +52,31 @@ function getArticle(files, indexS, gotArticle) {
               throw 'offsets >= 2^31 are too big for node.js ' + process.version;
             }
 
-            fs.read(files.d.fd, chunk, 0, 1023, offset, function (err, bytesRead, data) {
-              if (!err && bytesRead > 0) {
-                var article = data.toString('utf-8');
+            ///
+            var slab = '';
+            (function readMore (off) {
+              fs.read(files.d.fd, chunk, 0, 1024, off, function (err, bytesRead, data) {
+                if (!err && bytesRead > 0) {
+                  slab += data.toString('utf-8');
 
-                gotArticle(article);
-              } else {
-                console.log('dump read err, bytesRead', err, bytesRead);
-              }
-            });
+                  var end = slab.indexOf('</revision>');
 
+                  if (end !== -1) {
+                    end = slab.indexOf('\n', end);
+                    if (end !== -1) {
+                      gotArticle(slab.substring(0, end + 1));
+                    } else {
+                      throw 'didn\'t get \\n';
+                    }
+                  } else {
+                    readMore(off + 1024);
+                  }
+                } else {
+                  console.log('dump read err, bytesRead', err, bytesRead);
+                }
+              });
+            })(offset);
+            ///
           }
         });
       } else { throw ['indexR', err, bytesRead]; }
@@ -133,7 +145,6 @@ function bsearch(files, searchTerm, callback) {
       // calculate midpoint to cut set in half
       var imid = Math.floor((imin + imax) / 2); 
 
-      // start while TODO recursion
       getTitle(A, imid, function (Aimid) {
 
         // three-way comparison
@@ -173,7 +184,7 @@ if (process.argv.length === 6) {  // 0 is node.exe, 1 is wikibsearch.js
 var home = process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'], 
     wikipathpath = home + '/.wikipath';
 
-path.exists(wikipathpath, function (x) {
+fs.exists(wikipathpath, function (x) {
   if (x) {
     var str = fs.createReadStream(wikipathpath, {start: 0, end: 1023}),
         wikipath = '',
@@ -191,7 +202,7 @@ path.exists(wikipathpath, function (x) {
     });
 
     str.on('end', function () {
-      path.exists(wikipath, function (x) {
+      fs.exists(wikipath, function (x) {
         var fullDumpPath;
 
         if (x) {
@@ -199,7 +210,7 @@ path.exists(wikipathpath, function (x) {
 
           fullDumpPath = wikipath + wikiLang + wikiProj + '-' + wikiDate + '-pages-articles.xml';
 
-          path.exists(fullDumpPath, function (x) {
+          fs.exists(fullDumpPath, function (x) {
             if (x) {
               console.log('dump "' + fullDumpPath + '" exists');
 
@@ -275,8 +286,8 @@ path.exists(wikipathpath, function (x) {
                                 if (result.a === result.b) {
                                   getTitle(files, result.a, function (t) {
                                     console.log('"' + searchTerm + '" found at ' + result.a);
-                                    var article = getArticle(files, result.a, function (a) {
-                                      console.log('article\n', a, '\n');
+                                    var article = getArticle(files, result.a, function (article) {
+                                      console.log('-------\n' + article + '-------');
                                     });
                                   });
                                 } else {
@@ -302,7 +313,7 @@ path.exists(wikipathpath, function (x) {
               }
             } else {
               console.error('dump "' + fullDumpPath + '" doesn\'t exist');
-              path.exists(fullDumpPath + '.bz2', function (x) {
+              fs.exists(fullDumpPath + '.bz2', function (x) {
                 if (x) {
                   console.error('but compressed dump "' + fullDumpPath + '.bz2" exists');
                 } else {
@@ -321,4 +332,3 @@ path.exists(wikipathpath, function (x) {
     console.error('no ".wikipath" in home');
   }
 });
-
