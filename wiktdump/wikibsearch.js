@@ -1,13 +1,24 @@
 'use strict';
 
+// compatibility
+
 var fs   = require('fs'),
+    path = require('path'), // for old version of node on toolserver which has path.exists rather than fs.exists
     util = require('util');
+
+function fs_exists(p, cb) {
+  if (fs.exists !== undefined)
+    fs.exists(p, cb);
+  else
+    path.exists(p, cb);
+}
 
 var supportsBigFiles = process.version.substring(1).split('.') >= [0,7,9];
 
 var wikiLang, wikiProj, wikiDate, searchTerm;
 
 var wikiPath = '';
+var indexPath = '';
 
 function processCommandline(thenCallback) {
   if (process.argv.length === 6) {  // 0 is node.exe, 1 is wikibsearch.js
@@ -29,10 +40,9 @@ function getPaths(thenCallback) {
   var home = process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'],
       wikipathpath = home + '/.wikipath';
 
-  fs.exists(wikipathpath, function (x) {
+  fs_exists(wikipathpath, function (x) {
     if (x) {
-      var str = fs.createReadStream(wikipathpath, {start: 0, end: 1023}),
-          indexPath = '';
+      var str = fs.createReadStream(wikipathpath, {start: 0, end: 1023});
 
       // TODO ~/.wikipath only has wikiPath - indexPath hardcoded for now!
       // TODO support multiple wikiPaths and indexPaths
@@ -48,7 +58,7 @@ function getPaths(thenCallback) {
       });
 
       str.on('end', function () {
-        fs.exists(wikiPath, function (x) {
+        fs_exists(wikiPath, function (x) {
           var fullDumpPath;
 
           if (x) {
@@ -56,12 +66,12 @@ function getPaths(thenCallback) {
 
             fullDumpPath = wikiPath + wikiLang + wikiProj + '-' + wikiDate + '-pages-articles.xml';
 
-            fs.exists(fullDumpPath, function (x) {
+            fs_exists(fullDumpPath, function (x) {
               if (x) {
                 thenCallback(fullDumpPath);
               } else {
                 console.error('dump "' + fullDumpPath + '" doesn\'t exist');
-                fs.exists(fullDumpPath + '.bz2', function (x) {
+                fs_exists(fullDumpPath + '.bz2', function (x) {
                   if (x) {
                     console.error('but compressed dump "' + fullDumpPath + '.bz2" exists');
                   } else {
