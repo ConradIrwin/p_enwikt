@@ -61,7 +61,7 @@ class XmlEntry:
         self.name = unicode(title)
         self.id = int(id)
         self.text = unicode(text)
-        self.username = username.strip()
+        self.username = username
         self.ipedit = ipedit
         self.timestamp = timestamp
         self.editRestriction = editRestriction
